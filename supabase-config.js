@@ -1,0 +1,1 @@
+window.BIOPROJECT_SUPABASE={url:"https://jxlqetvlldqfdfalhvbx.supabase.co",anonKey:"sb_publishable_NVB_tmrtVLkwnIWi-1dgfQ_sUIi4y4v"};
