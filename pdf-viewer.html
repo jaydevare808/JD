@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BioProject Hub - PDF</title>
+<style>
+body{margin:0;font:15px system-ui,sans-serif;background:#0b2119;color:#fff}
+header{position:sticky;top:0;z-index:2;background:#0f3024;padding:14px 16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+a{color:#0b2119;background:#fff;border-radius:10px;padding:10px 14px;font-weight:700;text-decoration:none}
+main{height:calc(100vh - 61px);display:flex;flex-direction:column}
+#msg{padding:18px}
+#viewer{flex:1;border:0;width:100%;background:#ddd}
+.hidden{display:none}
+</style>
+</head>
+<body>
+<header><a href="./">Back to BioProject Hub</a><b id="title">Biology Project PDF</b><a id="download" class="hidden">Download PDF</a></header>
+<main><div id="msg">Preparing PDF...</div><iframe id="viewer" title="Biology project PDF"></iframe></main>
+<script>
+const map={
+  endangered:{title:"Endangered Plant and Animal Species of Maharashtra",data:"./pdf-data/endangered.gz.b64",file:"Endangered-Maharashtra-Biodiversity.pdf"},
+  avian:{title:"Avian Migration: A Study of Migratory Birds Visiting Various Habitats in Maharashtra",data:"./pdf-data/avian.gz.b64",file:"Avian-Migration-Maharashtra.pdf"}
+};
+const key=new URLSearchParams(location.search).get("doc")||"endangered";
+const cfg=map[key]||map.endangered;
+document.title=cfg.title+" | BioProject Hub";
+document.querySelector("#title").textContent=cfg.title;
+const msg=document.querySelector("#msg"),viewer=document.querySelector("#viewer"),dl=document.querySelector("#download");
+
+function esc(s){
+  return String(s).replace(/\\/g,"\\\\").replace(/\(/g,"\\(").replace(/\)/g,"\\)").replace(/[^\x20-\x7E]/g," ");
+}
+function wrap(s,n){
+  n=n||94; const a=[];
+  for(const para of String(s).split(/\r?\n/)){
+    let x=para.trim(); if(!x){a.push("");continue;}
+    while(x.length>n){let k=x.lastIndexOf(" ",n);if(k<40)k=n;a.push(x.slice(0,k));x=x.slice(k+1);}
+    a.push(x);
+  }
+  return a;
+}
+function makePdf(text){
+  const pages=text.split(/===== PAGE \d+ =====/).slice(1);
+  const objs=[];
+  objs[1]="<< /Type /Catalog /Pages 2 0 R >>";
+  objs[2]="<< /Type /Pages /Kids ["+pages.map((_,i)=>(5+i*2)+" 0 R").join(" ")+"] /Count "+pages.length+" >>";
+  objs[3]="<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>";
+  objs[4]="<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>";
+  pages.forEach((raw,i)=>{
+    const po=5+i*2,co=po+1,lines=[]; let y=742,first=true;
+    for(const line of wrap(raw,92)){
+      if(y<52)break;
+      const t=line.replace(/^(Web PDF page \d+)$/,"").trim();
+      if(!t){y-=7;continue;}
+      const size=first?14:9.5,font=first?"F2":"F1";
+      lines.push("1 0 0 1 48 "+y+" Tm /"+font+" "+size+" Tf ("+esc(t.slice(0,100))+") Tj");
+      y-=first?21:12.5; first=false;
+    }
+    lines.unshift("1 0 0 1 520 760 Tm /F1 7 Tf (Page "+(i+1)+") Tj");
+    const stream="BT\n"+lines.join("\n")+"\nET";
+    objs[po]="<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents "+co+" 0 R >>";
+    objs[co]="<< /Length "+new TextEncoder().encode(stream).length+" >>\nstream\n"+stream+"\nendstream";
+  });
+  let pdf="%PDF-1.4\n"; const offs=new Array(objs.length).fill(0);
+  for(let i=1;i<objs.length;i++){offs[i]=new TextEncoder().encode(pdf).length;pdf+=i+" 0 obj\n"+objs[i]+"\nendobj\n";}
+  const xref=new TextEncoder().encode(pdf).length;
+  pdf+="xref\n0 "+objs.length+"\n0000000000 65535 f \n";
+  for(let i=1;i<objs.length;i++)pdf+=String(offs[i]).padStart(10,"0")+" 00000 n \n";
+  pdf+="trailer\n<< /Size "+objs.length+" /Root 1 0 R >>\nstartxref\n"+xref+"\n%%EOF\n";
+  return new Uint8Array(new TextEncoder().encode(pdf));
+}
+function fromB64(b){
+  const bin=atob(b.replace(/\s/g,"")); const u=new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i); return u;
+}
+async function gunzip(u){
+  const ds=new DecompressionStream("gzip");
+  const ab=await new Response(new Blob([u]).stream().pipeThrough(ds)).arrayBuffer();
+  return new TextDecoder().decode(ab);
+}
+(async()=>{
+ try{
+   const resp=await fetch(cfg.data,{cache:"force-cache"}); if(!resp.ok)throw Error("PDF data unavailable");
+   const text=await gunzip(fromB64(await resp.text()));
+   const url=URL.createObjectURL(new Blob([makePdf(text)],{type:"application/pdf"}));
+   viewer.src=url; dl.href=url; dl.download=cfg.file; dl.classList.remove("hidden");
+   msg.textContent="PDF ready"; setTimeout(()=>msg.remove(),500);
+ }catch(e){msg.textContent="Could not prepare this PDF. Please refresh the page.";console.error(e);}
+})();
+</script>
+</body>
+</html>
