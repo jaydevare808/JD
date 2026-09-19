@@ -1,7 +1,7 @@
 const cfg=window.BIOPROJECT_SUPABASE||{};const sb=window.supabase?.createClient?.(cfg.url,cfg.anonKey);const $=s=>document.querySelector(s);let projects=[],session=null,isAdmin=false;
 const STATIC_PDFS={
-"Endangered Plant and Animal Species of Maharashtra: A Study on Biodiversity Loss":"./pdf-viewer.html?doc=endangered",
-"Avian Migration: A Study of Migratory Birds Visiting Various Habitats in Maharashtra":"./pdf-viewer.html?doc=avian"
+"Endangered Plant and Animal Species of Maharashtra: A Study on Biodiversity Loss":"./pdfs/endangered-maharashtra-biodiversity.pdf",
+"Avian Migration: A Study of Migratory Birds Visiting Various Habitats in Maharashtra":"./pdfs/avian-migration-maharashtra.pdf"
 };
 const demo=[
 {id:"d1",title:"Endangered Plant and Animal Species of Maharashtra: A Study on Biodiversity Loss",class_level:"12",category:"Biodiversity & Conservation",chapter:"Biodiversity and Conservation",practical_no:"Project Topic 3",description:"A Maharashtra-focused study of endangered flora and fauna, classification, causes of biodiversity loss, analysis and conservation strategies.",tags:["Biodiversity","Conservation","Maharashtra"]},
