@@ -113,21 +113,39 @@ async function account(){
     closeModal();
     return;
   }
+
   $("#loginBtn").classList.add("hidden");
   $("#logoutBtn").classList.remove("hidden");
 
-  const adminCheck=await sb.from("admins").select("user_id").eq("user_id",session.user.id).maybeSingle();
-  isAdmin=!adminCheck.error&&Boolean(adminCheck.data);
-
-  if(isAdmin){
-    $("#adminBtn").classList.remove("hidden");
-    $("#adminMsg").textContent="You are signed in as an approved administrator.";
-  }else{
-    $("#adminBtn").classList.add("hidden");
+  try{
+    const r=await sb.rpc("is_admin");
+    if(r.error)throw r.error;
+    isAdmin=Boolean(r.data);
+  }catch(e){
+    isAdmin=false;
   }
+
+  $("#adminBtn").classList.remove("hidden");
+  $("#adminBtn").setAttribute("aria-label",isAdmin?"Open administrator panel":"Administrator access");
+  $("#adminBtn").textContent=isAdmin?"Admin":"Admin";
+  if(isAdmin)$("#adminMsg").textContent="You are signed in as an approved administrator.";
 }
 function showAuthNote(msg){$("#authNote").textContent=msg;$("#authNote").classList.remove("hidden")}
-function openAdmin(){if(!isAdmin)return;$("#adminPanel").classList.remove("hidden");$("#projectForm").classList.remove("hidden");loadAdmin()}
+async function openAdmin(){
+  if(!session?.user){
+    showAuthNote("Sign in with Google to access administrator controls.");
+    return;
+  }
+  const check=await sb.rpc("is_admin");
+  if(check.error||!check.data){
+    alert("This Google account is not approved as an administrator.");
+    return;
+  }
+  isAdmin=true;
+  $("#adminPanel").classList.remove("hidden");
+  $("#projectForm").classList.remove("hidden");
+  loadAdmin();
+}
 function closeAdmin(){$("#adminPanel").classList.add("hidden")}
 async function loadAdmin(){
   const r=await sb.from("projects").select("*").order("created_at",{ascending:false});
