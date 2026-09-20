@@ -143,6 +143,6 @@ async function secureExistingPdfs(){
     if(b)b.disabled=false;
   }
 }
-$("#search").oninput=render;$("#class").onchange=render;$("#category").onchange=render;$("#loginBtn").onclick=login;$("#logoutBtn").onclick=logout;$("#adminBtn").onclick=openAdmin;$("#close").onclick=closeModal;$("#adminClose").onclick=closeAdmin;$("#modalLogin").onclick=login;$("#secureExisting").onclick=secureExistingPdfs;
+$("#search").oninput=render;$("#class").onchange=render;$("#category").onchange=render;$("#loginBtn").onclick=login;$("#logoutBtn").onclick=logout;$("#adminBtn").onclick=openAdmin;$("#close").onclick=closeModal;$("#adminClose").onclick=closeAdmin;$("#secureExisting").onclick=secureExistingPdfs;
 window.addEventListener("keydown",e=>{if(e.key==="Escape"){closeModal();closeAdmin()}});
 load();refreshAuth();
