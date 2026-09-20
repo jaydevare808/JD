@@ -4,9 +4,9 @@ const $=s=>document.querySelector(s);
 let projects=[],session=null,isAdmin=false,authListener=null;
 
 const STATIC_PDFS={
-  "Endangered Plant and Animal Species of Maharashtra: A Study on Biodiversity Loss":"./pdfs/jd-biology-project.pdf",
-  "Avian Migration: A Study of Migratory Birds Visiting Various Habitats in Maharashtra":"./pdfs/rudra-bio-project.pdf",
-  "Urban Ecology and Arboriculture: A Study of Different Avenue Trees and Their Importance":"./pdfs/mayur-mali-biology-project.pdf"
+  "Endangered Plant and Animal Species of Maharashtra: A Study on Biodiversity Loss":"./pdfs/JD%20Biology%20Project.pdf",
+  "Avian Migration: A Study of Migratory Birds Visiting Various Habitats in Maharashtra":"./pdfs/Rudra%20Bio%20project.pdf",
+  "Urban Ecology and Arboriculture: A Study of Different Avenue Trees and Their Importance":"./pdfs/Mayur%20Mali%20Biology%20Project.pdf"
 };
 
 const demo=[
@@ -41,39 +41,22 @@ function render(){
   const q=$("#search").value.toLowerCase().trim(),cl=$("#class").value,cat=$("#category").value;
   const list=projects.filter(p=>(!q||[p.title,p.chapter,p.category,p.description,...(p.tags||[])].join(" ").toLowerCase().includes(q))&&(cl==="all"||String(p.class_level)===cl)&&(cat==="all"||p.category===cat));
   $("#grid").innerHTML=list.length?list.map(card).join(""):'<div class="empty">No projects match your search.</div>';
-  $("#total").textContent=projects.length;
-  $("#c11").textContent=projects.filter(p=>String(p.class_level)==="11").length;
-  $("#c12").textContent=projects.filter(p=>String(p.class_level)==="12").length;
-  $("#cats").textContent=new Set(projects.map(p=>p.category).filter(Boolean)).size;
-  $("#heroCount").textContent=projects.length;
-  const cats=[...new Set(projects.map(p=>p.category).filter(Boolean))].sort();
-  const selected=$("#category").value;
-  $("#category").innerHTML='<option value="all">All categories</option>'+cats.map(x=>'<option value="'+esc(x)+'">'+esc(x)+'</option>').join("");
-  $("#category").value=cats.includes(selected)?selected:"all";
+  $("#total").textContent=projects.length;$("#c11").textContent=projects.filter(p=>String(p.class_level)==="11").length;$("#c12").textContent=projects.filter(p=>String(p.class_level)==="12").length;$("#cats").textContent=new Set(projects.map(p=>p.category).filter(Boolean)).size;$("#heroCount").textContent=projects.length;
+  const cats=[...new Set(projects.map(p=>p.category).filter(Boolean))].sort(),selected=$("#category").value;
+  $("#category").innerHTML='<option value="all">All categories</option>'+cats.map(x=>'<option value="'+esc(x)+'">'+esc(x)+'</option>').join("");$("#category").value=cats.includes(selected)?selected:"all";
   $("#grid").querySelectorAll("[data-id]").forEach(b=>b.onclick=()=>openProject(b.dataset.id));
 }
 
 function openProject(id){
   const p=projects.find(x=>x.id===id);if(!p)return;
-  $("#modalPoster").innerHTML=poster(p);
-  $("#modalClass").textContent="Class "+(p.class_level||"");
-  $("#modalTitle").textContent=p.title;
-  $("#modalDesc").textContent=p.description||"";
+  $("#modalPoster").innerHTML=poster(p);$("#modalClass").textContent="Class "+(p.class_level||"");$("#modalTitle").textContent=p.title;$("#modalDesc").textContent=p.description||"";
   $("#modalMeta").innerHTML=[p.category,p.chapter,p.practical_no].filter(Boolean).map(x=>"<span>"+esc(x)+"</span>").join("");
   const v=$("#viewPdf"),d=$("#downloadPdf"),wrap=$("#previewWrap"),frame=$("#pdfPreview"),none=$("#noPdf");
-  if(p.pdf_url){
-    wrap.classList.remove("hidden");none.classList.add("hidden");
-    frame.src=p.pdf_url;
-    v.classList.remove("hidden");d.classList.remove("hidden");
-    v.href=p.pdf_url;d.href=p.pdf_url;d.setAttribute("download","");
-  }else{
-    wrap.classList.add("hidden");none.classList.remove("hidden");
-    frame.removeAttribute("src");v.classList.add("hidden");d.classList.add("hidden");
-  }
+  if(p.pdf_url){wrap.classList.remove("hidden");none.classList.add("hidden");frame.src=p.pdf_url;v.classList.remove("hidden");d.classList.remove("hidden");v.href=p.pdf_url;d.href=p.pdf_url;d.setAttribute("download","");}
+  else{wrap.classList.add("hidden");none.classList.remove("hidden");frame.removeAttribute("src");v.classList.add("hidden");d.classList.add("hidden");}
   $("#modal").classList.remove("hidden");
 }
-
-function closeModal(){ $("#modal").classList.add("hidden"); $("#pdfPreview").removeAttribute("src") }
+function closeModal(){$("#modal").classList.add("hidden");$("#pdfPreview").removeAttribute("src")}
 
 async function login(){
   if(!sb){showAuthNote("Authentication is not configured yet.");return}
@@ -88,13 +71,9 @@ async function refreshAuth(){
   if(!authListener)authListener=sb.auth.onAuthStateChange(async(_event,s)=>{session=s;await account()}).data.subscription;
 }
 async function account(){
-  if(!session?.user){
-    isAdmin=false;$("#loginBtn").classList.remove("hidden");$("#logoutBtn").classList.add("hidden");$("#adminBtn").classList.add("hidden");return;
-  }
+  if(!session?.user){isAdmin=false;$("#loginBtn").classList.remove("hidden");$("#logoutBtn").classList.add("hidden");$("#adminBtn").classList.add("hidden");return}
   $("#loginBtn").classList.add("hidden");$("#logoutBtn").classList.remove("hidden");
-  const r=await sb.rpc("is_admin");
-  isAdmin=!r.error&&Boolean(r.data);
-  $("#adminBtn").classList.toggle("hidden",!isAdmin);
+  const r=await sb.rpc("is_admin");isAdmin=!r.error&&Boolean(r.data);$("#adminBtn").classList.toggle("hidden",!isAdmin);
   if(isAdmin)$("#adminMsg").textContent="You are signed in as an approved administrator.";
 }
 function showAuthNote(msg){$("#authNote").textContent=msg;$("#authNote").classList.remove("hidden")}
@@ -107,19 +86,15 @@ async function loadAdmin(){
 }
 async function upload(bucket,path,file){
   const r=await sb.storage.from(bucket).upload(path,file,{upsert:true,contentType:file.type||"application/pdf",cacheControl:"3600"});
-  if(r.error)throw r.error;
-  return sb.storage.from(bucket).getPublicUrl(path).data.publicUrl;
+  if(r.error)throw r.error;return sb.storage.from(bucket).getPublicUrl(path).data.publicUrl;
 }
 $("#projectForm").onsubmit=async e=>{
   e.preventDefault();
   try{
-    const id=crypto.randomUUID(),pdf=$("#fPdf").files[0];if(!pdf)throw Error("Choose a PDF.");
-    if(pdf.type&&pdf.type!=="application/pdf")throw Error("Only PDF files are supported.");
-    const pdfPath=id+"/"+Date.now()+"-"+pdf.name.replace(/[^a-z0-9.-]/gi,"-");
-    const pdfPublic=await upload("project-pdfs",pdfPath,pdf);
+    const id=crypto.randomUUID(),pdf=$("#fPdf").files[0];if(!pdf)throw Error("Choose a PDF.");if(pdf.type&&pdf.type!=="application/pdf")throw Error("Only PDF files are supported.");
+    const pdfPath=id+"/"+Date.now()+"-"+pdf.name.replace(/[^a-z0-9.-]/gi,"-"),pdfPublic=await upload("project-pdfs",pdfPath,pdf);
     const data={id,title:$("#fTitle").value.trim(),class_level:$("#fClass").value,practical_no:$("#fTopic").value?"Project Topic "+$("#fTopic").value:"",category:$("#fCategory").value.trim()||"Biology",chapter:$("#fChapter").value.trim(),description:$("#fDesc").value.trim(),tags:$("#fTags").value.split(",").map(x=>x.trim()).filter(Boolean),pdf_path:pdfPath,pdf_url:pdfPublic,updated_at:new Date().toISOString()};
-    const r=await sb.from("projects").insert(data);if(r.error)throw r.error;
-    $("#projectForm").reset();await load();await loadAdmin();alert("Project published.");
+    const r=await sb.from("projects").insert(data);if(r.error)throw r.error;$("#projectForm").reset();await load();await loadAdmin();alert("Project published.");
   }catch(e){alert(e.message||"Publish failed.")}
 }
 async function delProject(id){if(!confirm("Delete this project?"))return;const r=await sb.from("projects").delete().eq("id",id);if(r.error)return alert(r.error.message);await load();await loadAdmin()}
