@@ -88,47 +88,91 @@ async function openProject(id){
 }
 function closeModal(){$("#modal").classList.add("hidden");$("#pdfPreview").removeAttribute("src")}
 
-async function login(){
-  if(!sb){showAuthNote("Authentication is not configured yet.");return}
-  $("#status").textContent="Opening Google sign-in…";
-  const r=await sb.auth.signInWithOAuth({provider:"google",options:{redirectTo:location.href}});
-  if(r.error){$("#status").textContent="Ready";showAuthNote(r.error.message)}
+function isOAuthReturn(){
+  return location.hash.includes("access_token=")||location.search.includes("code=");
 }
-async function logout(){if(sb)await sb.auth.signOut()}
-async function refreshAuth(){
-  if(!sb)return;
-  if(!authListener){
-    authListener=sb.auth.onAuthStateChange((_event,s)=>{session=s;queueMicrotask(()=>account())}).data.subscription;
-  }
-  const r=await sb.auth.getSession();
-  session=r.data.session||null;
-  await account();
+function setAuthLoading(text){
+  const b=$("#loginBtn");
+  if(b){b.disabled=true;b.classList.add("auth-loading");b.dataset.originalText=b.textContent;b.textContent=text}
+  const state=$("#authState");
+  if(state){state.textContent=text;state.classList.remove("hidden")}
 }
-async function account(){
-  if(!session?.user){
-    isAdmin=false;
+function clearAuthLoading(){
+  const b=$("#loginBtn");
+  if(b){b.disabled=false;b.classList.remove("auth-loading")}
+  const state=$("#authState");
+  if(state){state.classList.add("hidden");state.textContent=""}
+}
+function renderSessionUi(){
+  if(session?.user){
+    $("#loginBtn").classList.add("hidden");
+    $("#logoutBtn").classList.remove("hidden");
+    $("#adminBtn").classList.remove("hidden");
+    clearAuthLoading();
+  }else{
     $("#loginBtn").classList.remove("hidden");
     $("#logoutBtn").classList.add("hidden");
     $("#adminBtn").classList.add("hidden");
-    closeModal();
-    return;
+    if(isOAuthReturn())setAuthLoading("Completing Google sign-in…");else clearAuthLoading();
   }
-
-  $("#loginBtn").classList.add("hidden");
-  $("#logoutBtn").classList.remove("hidden");
-
+}
+async function login(){
+  if(!sb){showAuthNote("Authentication is not configured yet.");return}
+  setAuthLoading("Opening Google sign-in…");
+  $("#status").textContent="Redirecting to Google…";
+  const redirectTo=location.origin+location.pathname;
+  const r=await sb.auth.signInWithOAuth({provider:"google",options:{redirectTo}});
+  if(r.error){
+    $("#status").textContent="Ready";
+    clearAuthLoading();
+    showAuthNote(r.error.message);
+  }
+}
+async function logout(){
+  if(!sb)return;
+  await sb.auth.signOut();
+  session=null;isAdmin=false;renderSessionUi();
+}
+async function checkAdmin(){
+  if(!session?.user){isAdmin=false;return}
   try{
     const r=await sb.rpc("is_admin");
     if(r.error)throw r.error;
     isAdmin=Boolean(r.data);
-  }catch(e){
-    isAdmin=false;
-  }
-
-  $("#adminBtn").classList.remove("hidden");
-  $("#adminBtn").setAttribute("aria-label",isAdmin?"Open administrator panel":"Administrator access");
-  $("#adminBtn").textContent=isAdmin?"Admin":"Admin";
+  }catch(e){isAdmin=false}
   if(isAdmin)$("#adminMsg").textContent="You are signed in as an approved administrator.";
+}
+async function initAuth(){
+  if(!sb)return;
+  renderSessionUi();
+  if(isOAuthReturn())setAuthLoading("Completing Google sign-in…");
+  if(!authListener){
+    authListener=sb.auth.onAuthStateChange((event,s)=>{
+      session=s||null;
+      renderSessionUi();
+      if(event==="SIGNED_IN"||event==="INITIAL_SESSION"){
+        queueMicrotask(async()=>{
+          await checkAdmin();
+          renderSessionUi();
+          if(event==="SIGNED_IN"||session?.user){
+            history.replaceState({},document.title,location.pathname+location.search);
+            $("#status").textContent="Signed in";
+          }
+        });
+      }
+    }).data.subscription;
+  }
+  const r=await sb.auth.getSession();
+  if(r.error){showAuthNote(r.error.message);return}
+  session=r.data.session||null;
+  renderSessionUi();
+  await checkAdmin();
+  if(session?.user){
+    history.replaceState({},document.title,location.pathname+location.search);
+    $("#status").textContent="Signed in";
+  }else if(!isOAuthReturn()){
+    $("#status").textContent="Ready";
+  }
 }
 function showAuthNote(msg){$("#authNote").textContent=msg;$("#authNote").classList.remove("hidden")}
 async function openAdmin(){
@@ -210,4 +254,4 @@ async function secureExistingPdfs(){
 }
 $("#search").oninput=render;$("#class").onchange=render;$("#category").onchange=render;$("#loginBtn").onclick=login;$("#logoutBtn").onclick=logout;$("#adminBtn").onclick=openAdmin;$("#close").onclick=closeModal;$("#adminClose").onclick=closeAdmin;$("#secureExisting").onclick=secureExistingPdfs;
 window.addEventListener("keydown",e=>{if(e.key==="Escape"){closeModal();closeAdmin()}});
-load();refreshAuth();
+load();initAuth();
