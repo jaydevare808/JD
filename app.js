@@ -3,10 +3,10 @@ const sb=window.supabase?.createClient?.(cfg.url,cfg.anonKey);
 const $=s=>document.querySelector(s);
 let projects=[],session=null,isAdmin=false,authListener=null;
 
-const STATIC_PDFS={
-  "Endangered Plant and Animal Species of Maharashtra: A Study on Biodiversity Loss":"./pdfs/JD%20Biology%20Project.pdf",
-  "Avian Migration: A Study of Migratory Birds Visiting Various Habitats in Maharashtra":"./pdfs/Rudra%20Bio%20project.pdf",
-  "Urban Ecology and Arboriculture: A Study of Different Avenue Trees and Their Importance":"./pdfs/Mayur%20Mali%20Biology%20Project.pdf"
+const PDF_PATHS={
+  "Endangered Plant and Animal Species of Maharashtra: A Study on Biodiversity Loss":"published/JD Biology Project.pdf",
+  "Avian Migration: A Study of Migratory Birds Visiting Various Habitats in Maharashtra":"published/Rudra Bio project.pdf",
+  "Urban Ecology and Arboriculture: A Study of Different Avenue Trees and Their Importance":"published/Mayur Mali Biology Project.pdf"
 };
 
 const demo=[
@@ -16,10 +16,10 @@ const demo=[
 ];
 
 function esc(s=""){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]))}
-function pdfUrl(p){if(p.pdf_url)return p.pdf_url;if(STATIC_PDFS[p.title])return STATIC_PDFS[p.title];if(p.pdf_path&&sb)return sb.storage.from("project-pdfs").getPublicUrl(p.pdf_path).data.publicUrl||"";return ""}
-function normalize(p){return {...p,pdf_url:pdfUrl(p)}}
+function pdfPath(p){return p.pdf_path||PDF_PATHS[p.title]||""}
+function normalize(p){return {...p,pdf_path:pdfPath(p),pdf_url:""}}
 function poster(p){return '<div class="poster"><b>'+esc(p.title)+'</b></div>'}
-function card(p){const pdf=p.pdf_url;return '<article class="card">'+poster(p)+'<div class="card-body"><span class="pill">Class '+esc(p.class_level)+'</span><h3>'+esc(p.title)+'</h3><p>'+esc(p.description||"Biology project resource.")+'</p><div class="meta"><span>'+esc(p.chapter||"Biology")+'</span><span>'+esc(p.practical_no||"Project")+'</span></div><div class="card-actions"><button class="btn ghost" data-id="'+esc(p.id)+'">Preview</button>'+(pdf?'<a class="btn primary" href="'+esc(pdf)+'" target="_blank" rel="noopener">Open PDF ↗</a>':'<span class="btn soft">PDF pending</span>')+'</div></div></article>'}
+function card(p){const hasPdf=Boolean(pdfPath(p));return '<article class="card">'+poster(p)+'<div class="card-body"><span class="pill">Class '+esc(p.class_level)+'</span><h3>'+esc(p.title)+'</h3><p>'+esc(p.description||"Biology project resource.")+'</p><div class="meta"><span>'+esc(p.chapter||"Biology")+'</span><span>'+esc(p.practical_no||"Project")+'</span></div><div class="card-actions"><button class="btn ghost" data-id="'+esc(p.id)+'">'+(hasPdf?"Preview":"Preview")+'</button>'+(hasPdf?'<button class="btn primary" data-open="'+esc(p.id)+'">Open PDF ↗</button>':'<span class="btn soft">PDF pending</span>')+'</div></div></article>'}
 
 async function load(){
   if(!sb){projects=demo.map(normalize);$("#status").textContent="Published library";render();return}
@@ -44,17 +44,47 @@ function render(){
   $("#total").textContent=projects.length;$("#c11").textContent=projects.filter(p=>String(p.class_level)==="11").length;$("#c12").textContent=projects.filter(p=>String(p.class_level)==="12").length;$("#cats").textContent=new Set(projects.map(p=>p.category).filter(Boolean)).size;$("#heroCount").textContent=projects.length;
   const cats=[...new Set(projects.map(p=>p.category).filter(Boolean))].sort(),selected=$("#category").value;
   $("#category").innerHTML='<option value="all">All categories</option>'+cats.map(x=>'<option value="'+esc(x)+'">'+esc(x)+'</option>').join("");$("#category").value=cats.includes(selected)?selected:"all";
-  $("#grid").querySelectorAll("[data-id]").forEach(b=>b.onclick=()=>openProject(b.dataset.id));
+  $("#grid").querySelectorAll("[data-id]").forEach(b=>b.onclick=()=>openProject(b.dataset.id));$("#grid").querySelectorAll("[data-open]").forEach(b=>b.onclick=()=>openProject(b.dataset.open));
 }
 
-function openProject(id){
+async function signedPdfUrl(p){
+  if(!session?.user)throw new Error("SIGN_IN_REQUIRED");
+  const path=pdfPath(p);
+  if(!path)throw new Error("PDF is not attached yet.");
+  const r=await sb.storage.from("project-pdfs").createSignedUrl(path,600);
+  if(r.error)throw r.error;
+  return r.data.signedUrl;
+}
+function showPdfGate(message="Sign in with Google to view or download this original PDF."){
+  const gate=$("#pdfGate");
+  $("#previewWrap").classList.add("hidden");
+  $("#viewPdf").classList.add("hidden");
+  $("#downloadPdf").classList.add("hidden");
+  $("#noPdf").classList.add("hidden");
+  gate.textContent="";
+  const strong=document.createElement("b");strong.textContent="Sign-in required";
+  const br=document.createElement("br");
+  const span=document.createElement("span");span.textContent=message;
+  const div=document.createElement("div");div.style.marginTop="12px";
+  const btn=document.createElement("button");btn.className="btn primary";btn.textContent="Continue with Google";btn.onclick=login;
+  div.appendChild(btn);gate.append(strong,br,span,div);gate.classList.remove("hidden");
+}
+async function openProject(id){
   const p=projects.find(x=>x.id===id);if(!p)return;
   $("#modalPoster").innerHTML=poster(p);$("#modalClass").textContent="Class "+(p.class_level||"");$("#modalTitle").textContent=p.title;$("#modalDesc").textContent=p.description||"";
   $("#modalMeta").innerHTML=[p.category,p.chapter,p.practical_no].filter(Boolean).map(x=>"<span>"+esc(x)+"</span>").join("");
-  const v=$("#viewPdf"),d=$("#downloadPdf"),wrap=$("#previewWrap"),frame=$("#pdfPreview"),none=$("#noPdf");
-  if(p.pdf_url){wrap.classList.remove("hidden");none.classList.add("hidden");frame.src=p.pdf_url;v.classList.remove("hidden");d.classList.remove("hidden");v.href=p.pdf_url;d.href=p.pdf_url;d.setAttribute("download","");}
-  else{wrap.classList.add("hidden");none.classList.remove("hidden");frame.removeAttribute("src");v.classList.add("hidden");d.classList.add("hidden");}
+  const v=$("#viewPdf"),d=$("#downloadPdf"),wrap=$("#previewWrap"),frame=$("#pdfPreview"),none=$("#noPdf"),gate=$("#pdfGate");
+  wrap.classList.add("hidden");frame.removeAttribute("src");v.classList.add("hidden");d.classList.add("hidden");none.classList.add("hidden");gate.classList.add("hidden");
   $("#modal").classList.remove("hidden");
+  const path=pdfPath(p);
+  if(!path){none.classList.remove("hidden");return}
+  if(!session?.user){showPdfGate();return}
+  try{
+    const url=await signedPdfUrl(p);
+    frame.src=url;wrap.classList.remove("hidden");v.href=url;v.classList.remove("hidden");d.href=url;d.setAttribute("download",p.title.replace(/[^a-z0-9]+/gi,"-")+".pdf");d.classList.remove("hidden");
+  }catch(e){
+    showPdfGate(e.message||"The secure PDF could not be opened.");
+  }
 }
 function closeModal(){$("#modal").classList.add("hidden");$("#pdfPreview").removeAttribute("src")}
 
@@ -71,7 +101,7 @@ async function refreshAuth(){
   if(!authListener)authListener=sb.auth.onAuthStateChange(async(_event,s)=>{session=s;await account()}).data.subscription;
 }
 async function account(){
-  if(!session?.user){isAdmin=false;$("#loginBtn").classList.remove("hidden");$("#logoutBtn").classList.add("hidden");$("#adminBtn").classList.add("hidden");return}
+  if(!session?.user){isAdmin=false;$("#loginBtn").classList.remove("hidden");$("#logoutBtn").classList.add("hidden");$("#adminBtn").classList.add("hidden");closeModal();return}
   $("#loginBtn").classList.add("hidden");$("#logoutBtn").classList.remove("hidden");
   const r=await sb.rpc("is_admin");isAdmin=!r.error&&Boolean(r.data);$("#adminBtn").classList.toggle("hidden",!isAdmin);
   if(isAdmin)$("#adminMsg").textContent="You are signed in as an approved administrator.";
@@ -86,18 +116,33 @@ async function loadAdmin(){
 }
 async function upload(bucket,path,file){
   const r=await sb.storage.from(bucket).upload(path,file,{upsert:true,contentType:file.type||"application/pdf",cacheControl:"3600"});
-  if(r.error)throw r.error;return sb.storage.from(bucket).getPublicUrl(path).data.publicUrl;
+  if(r.error)throw r.error;
 }
 $("#projectForm").onsubmit=async e=>{
   e.preventDefault();
   try{
     const id=crypto.randomUUID(),pdf=$("#fPdf").files[0];if(!pdf)throw Error("Choose a PDF.");if(pdf.type&&pdf.type!=="application/pdf")throw Error("Only PDF files are supported.");
-    const pdfPath=id+"/"+Date.now()+"-"+pdf.name.replace(/[^a-z0-9.-]/gi,"-"),pdfPublic=await upload("project-pdfs",pdfPath,pdf);
-    const data={id,title:$("#fTitle").value.trim(),class_level:$("#fClass").value,practical_no:$("#fTopic").value?"Project Topic "+$("#fTopic").value:"",category:$("#fCategory").value.trim()||"Biology",chapter:$("#fChapter").value.trim(),description:$("#fDesc").value.trim(),tags:$("#fTags").value.split(",").map(x=>x.trim()).filter(Boolean),pdf_path:pdfPath,pdf_url:pdfPublic,updated_at:new Date().toISOString()};
+    const pdfPath=id+"/"+Date.now()+"-"+pdf.name.replace(/[^a-z0-9.-]/gi,"-");await upload("project-pdfs",pdfPath,pdf);
+    const data={id,title:$("#fTitle").value.trim(),class_level:$("#fClass").value,practical_no:$("#fTopic").value?"Project Topic "+$("#fTopic").value:"",category:$("#fCategory").value.trim()||"Biology",chapter:$("#fChapter").value.trim(),description:$("#fDesc").value.trim(),tags:$("#fTags").value.split(",").map(x=>x.trim()).filter(Boolean),pdf_path:pdfPath,pdf_url:null,updated_at:new Date().toISOString()};
     const r=await sb.from("projects").insert(data);if(r.error)throw r.error;$("#projectForm").reset();await load();await loadAdmin();alert("Project published.");
   }catch(e){alert(e.message||"Publish failed.")}
 }
 async function delProject(id){if(!confirm("Delete this project?"))return;const r=await sb.from("projects").delete().eq("id",id);if(r.error)return alert(r.error.message);await load();await loadAdmin()}
-$("#search").oninput=render;$("#class").onchange=render;$("#category").onchange=render;$("#loginBtn").onclick=login;$("#logoutBtn").onclick=logout;$("#adminBtn").onclick=openAdmin;$("#close").onclick=closeModal;$("#adminClose").onclick=closeAdmin;
+async function secureExistingPdfs(){
+  if(!session?.user){showAuthNote("Sign in with Google to secure the published PDFs.");return}
+  if(!isAdmin)return;
+  const b=$("#secureExisting");if(b)b.disabled=true;
+  try{
+    const r=await sb.functions.invoke("secure-project-pdfs",{body:{}});
+    if(r.error)throw r.error;
+    await load();await loadAdmin();
+    alert("The existing project PDFs are now protected. Signed-in users can view and download them.");
+  }catch(e){
+    alert(e.message||"Could not secure the existing PDFs.");
+  }finally{
+    if(b)b.disabled=false;
+  }
+}
+$("#search").oninput=render;$("#class").onchange=render;$("#category").onchange=render;$("#loginBtn").onclick=login;$("#logoutBtn").onclick=logout;$("#adminBtn").onclick=openAdmin;$("#close").onclick=closeModal;$("#adminClose").onclick=closeAdmin;$("#modalLogin").onclick=login;$("#secureExisting").onclick=secureExistingPdfs;
 window.addEventListener("keydown",e=>{if(e.key==="Escape"){closeModal();closeAdmin()}});
 load();refreshAuth();
