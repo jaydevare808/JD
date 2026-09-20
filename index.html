@@ -61,8 +61,21 @@
     <div class="modal-head"><div id="modalPoster" class="poster"></div><div class="modal-info"><span id="modalClass" class="pill"></span><h2 id="modalTitle"></h2><p id="modalDesc"></p><div id="modalMeta" class="meta"></div></div></div>
     <div id="pdfGate" class="auth-note hidden"></div>
     <div id="previewWrap" class="preview-wrap hidden">
-      <div class="preview-head"><b>PDF Preview</b><span>Original file shown in the browser</span></div>
-      <iframe id="pdfPreview" title="PDF preview" loading="lazy"></iframe>
+      <div class="preview-head"><b>PDF Preview</b><span>Original file shown here · no new tab</span></div>
+      <div class="pdf-toolbar">
+        <button id="pdfPrev" class="pdf-tool" type="button">‹</button>
+        <span id="pdfPageInfo">Page — / —</span>
+        <button id="pdfNext" class="pdf-tool" type="button">›</button>
+        <span class="pdf-spacer"></span>
+        <button id="pdfZoomOut" class="pdf-tool" type="button">−</button>
+        <span id="pdfZoom">120%</span>
+        <button id="pdfZoomIn" class="pdf-tool" type="button">+</button>
+      </div>
+      <div id="pdfCanvasWrap" class="pdf-canvas-wrap">
+        <div id="pdfLoading" class="pdf-loading">Loading PDF preview…</div>
+        <div id="pdfError" class="pdf-error hidden"></div>
+        <canvas id="pdfCanvas"></canvas>
+      </div>
     </div>
     <div id="noPdf" class="no-pdf hidden">This project is published, but its PDF file has not been attached yet.</div>
     <div class="modal-actions"><a id="viewPdf" class="btn primary hidden" target="_blank" rel="noopener">Open Full PDF ↗</a><a id="downloadPdf" class="btn soft hidden">Download PDF</a></div>
@@ -91,7 +104,8 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="./supabase-config.js"></script>
-<script src="./app.js?v=20260920-2020"></script>
+<script src="./app.js?v=20260920-2035"></script>
 </body>
 </html>
