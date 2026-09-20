@@ -132,11 +132,38 @@ async function secureExistingPdfs(){
   if(!session?.user){showAuthNote("Sign in with Google to secure the published PDFs.");return}
   if(!isAdmin)return;
   const b=$("#secureExisting");if(b)b.disabled=true;
+  const sources={
+    "Endangered Plant and Animal Species of Maharashtra: A Study on Biodiversity Loss":"./pdfs/JD%20Biology%20Project.pdf",
+    "Avian Migration: A Study of Migratory Birds Visiting Various Habitats in Maharashtra":"./pdfs/Rudra%20Bio%20project.pdf",
+    "Urban Ecology and Arboriculture: A Study of Different Avenue Trees and Their Importance":"./pdfs/Mayur%20Mali%20Biology%20Project.pdf"
+  };
   try{
-    const r=await sb.functions.invoke("secure-project-pdfs",{body:{}});
-    if(r.error)throw r.error;
+    const current=(await sb.from("projects").select("id,title,pdf_path,pdf_url")).data||[];
+    for(const p of current){
+      const path=PDF_PATHS[p.title];
+      if(!path)continue;
+      const already=p.pdf_path&&p.pdf_path.startsWith("published/");
+      if(already)continue;
+      const sourceUrl=sources[p.title];
+      if(!sourceUrl)continue;
+      const response=await fetch(sourceUrl,{cache:"no-store"});
+      if(!response.ok)throw new Error("Could not read "+p.title+" PDF from GitHub (HTTP "+response.status+").");
+      const blob=await response.blob();
+      const {error:uploadError}=await sb.storage.from("project-pdfs").upload(path,blob,{
+        upsert:true,
+        contentType:"application/pdf",
+        cacheControl:"3600"
+      });
+      if(uploadError)throw uploadError;
+      const {error:updateError}=await sb.from("projects").update({
+        pdf_path:path,
+        pdf_url:null,
+        updated_at:new Date().toISOString()
+      }).eq("id",p.id);
+      if(updateError)throw updateError;
+    }
     await load();await loadAdmin();
-    alert("The existing project PDFs are now protected. Signed-in users can view and download them.");
+    alert("Done. The existing PDFs are now in private storage. Sign-in is required to preview or download them.");
   }catch(e){
     alert(e.message||"Could not secure the existing PDFs.");
   }finally{
