@@ -59,6 +59,7 @@
   <div class="modal-box project-modal">
     <button class="close" id="close" aria-label="Close">×</button>
     <div class="modal-head"><div id="modalPoster" class="poster"></div><div class="modal-info"><span id="modalClass" class="pill"></span><h2 id="modalTitle"></h2><p id="modalDesc"></p><div id="modalMeta" class="meta"></div></div></div>
+    <div id="pdfGate" class="auth-note hidden"></div>
     <div id="previewWrap" class="preview-wrap hidden">
       <div class="preview-head"><b>PDF Preview</b><span>Original file shown in the browser</span></div>
       <iframe id="pdfPreview" title="PDF preview" loading="lazy"></iframe>
@@ -81,6 +82,8 @@
       <label>Tags<input id="fTags" placeholder="genetics, ecology, conservation"></label>
       <label>PDF <input id="fPdf" type="file" accept="application/pdf"></label>
       <small class="file-note">PDFs are uploaded as the original file. No image conversion or PDF compression is performed.</small>
+      <button id="secureExisting" class="btn ghost" type="button">Secure existing published PDFs</button>
+      <small class="file-note">One-time migration: moves the three existing GitHub PDFs into private storage so unauthenticated visitors cannot access them directly.</small>
       <button class="btn primary" type="submit">Publish Project</button>
     </form>
     <div id="adminList"></div>
