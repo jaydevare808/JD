@@ -1,28 +1,128 @@
-const cfg=window.BIOPROJECT_SUPABASE||{};const sb=window.supabase?.createClient?.(cfg.url,cfg.anonKey);const $=s=>document.querySelector(s);let projects=[],session=null,isAdmin=false;
+const cfg=window.BIOPROJECT_SUPABASE||{};
+const sb=window.supabase?.createClient?.(cfg.url,cfg.anonKey);
+const $=s=>document.querySelector(s);
+let projects=[],session=null,isAdmin=false,authListener=null;
+
 const STATIC_PDFS={
-"Endangered Plant and Animal Species of Maharashtra: A Study on Biodiversity Loss":"./pdfs/endangered-maharashtra-biodiversity.pdf",
-"Avian Migration: A Study of Migratory Birds Visiting Various Habitats in Maharashtra":"./pdfs/avian-migration-maharashtra.pdf"
+  "Endangered Plant and Animal Species of Maharashtra: A Study on Biodiversity Loss":"./pdfs/jd-biology-project.pdf",
+  "Avian Migration: A Study of Migratory Birds Visiting Various Habitats in Maharashtra":"./pdfs/rudra-bio-project.pdf",
+  "Urban Ecology and Arboriculture: A Study of Different Avenue Trees and Their Importance":"./pdfs/mayur-mali-biology-project.pdf"
 };
+
 const demo=[
-{id:"d1",title:"Endangered Plant and Animal Species of Maharashtra: A Study on Biodiversity Loss",class_level:"12",category:"Biodiversity & Conservation",chapter:"Biodiversity and Conservation",practical_no:"Project Topic 3",description:"A Maharashtra-focused study of endangered flora and fauna, classification, causes of biodiversity loss, analysis and conservation strategies.",tags:["Biodiversity","Conservation","Maharashtra"]},
-{id:"d2",title:"Avian Migration: A Study of Migratory Birds Visiting Various Habitats in Maharashtra",class_level:"12",category:"Ecology & Environment",chapter:"Ecology and Biodiversity",practical_no:"Project Topic 14",description:"A study of migratory birds visiting Maharashtra, including taxonomy, habitats, ecological importance, threats and conservation strategies.",tags:["Migratory Birds","Ecology","Wetlands","Maharashtra"]}
+{id:"jd-static",title:"Endangered Plant and Animal Species of Maharashtra: A Study on Biodiversity Loss",class_level:"12",category:"Biodiversity & Conservation",chapter:"Biodiversity and Conservation",practical_no:"Project Topic 3",description:"A Maharashtra-focused study of endangered flora and fauna, classification, causes of biodiversity loss, analysis and conservation strategies.",tags:["Biodiversity","Conservation","Maharashtra"]},
+{id:"rudra-static",title:"Avian Migration: A Study of Migratory Birds Visiting Various Habitats in Maharashtra",class_level:"12",category:"Ecology & Environment",chapter:"Ecology and Biodiversity",practical_no:"Project Topic 14",description:"A study of migratory birds visiting Maharashtra, including taxonomy, habitats, ecological importance, threats and conservation strategies.",tags:["Migratory Birds","Ecology","Wetlands","Maharashtra"]},
+{id:"mayur-static",title:"Urban Ecology and Arboriculture: A Study of Different Avenue Trees and Their Importance",class_level:"12",category:"Ecology & Environment",chapter:"Ecology and Arboriculture",practical_no:"Project Topic 12",description:"A study of common avenue trees, their taxonomy, ecological value, medicinal and economic importance, and their role in urban environments.",tags:["Avenue Trees","Ecology","Arboriculture","Maharashtra"]}
 ];
+
 function esc(s=""){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]))}
 function pdfUrl(p){if(p.pdf_url)return p.pdf_url;if(STATIC_PDFS[p.title])return STATIC_PDFS[p.title];if(p.pdf_path&&sb)return sb.storage.from("project-pdfs").getPublicUrl(p.pdf_path).data.publicUrl||"";return ""}
 function normalize(p){return {...p,pdf_url:pdfUrl(p)}}
 function poster(p){return '<div class="poster"><b>'+esc(p.title)+'</b></div>'}
-function card(p){const pdf=p.pdf_url;return '<article class="card">'+poster(p)+'<div class="card-body"><span class="pill">Class '+esc(p.class_level)+'</span><h3>'+esc(p.title)+'</h3><p>'+esc(p.description)+'</p><div class="meta"><span>'+esc(p.chapter||"Biology")+'</span><span>'+esc(p.practical_no||"Project")+'</span></div><div class="card-actions"><button class="btn ghost" data-id="'+esc(p.id)+'">Details</button>'+(pdf?'<a class="btn primary" href="'+esc(pdf)+'">View PDF</a>':'<span class="btn soft">PDF pending</span>')+'</div></div></article>'}
-async function load(){if(!sb){projects=demo.map(normalize);$("#status").textContent="Published library";render();return}try{const r=await sb.from("projects").select("*").order("created_at",{ascending:false});if(r.error)throw r.error;projects=(r.data?.length?r.data:demo).map(normalize);$("#status").textContent=r.data?.length?"Live library":"Published library"}catch(e){projects=demo.map(normalize);$("#status").textContent="Published library"}render()}
-function render(){const q=$("#search").value.toLowerCase().trim(),cl=$("#class").value,cat=$("#category").value;let list=projects.filter(p=>(!q||[p.title,p.chapter,p.category,p.description,...(p.tags||[])].join(" ").toLowerCase().includes(q))&&(cl==="all"||String(p.class_level)===cl)&&(cat==="all"||p.category===cat));$("#grid").innerHTML=list.length?list.map(card).join(""):'<div class="empty">No projects match your search.</div>';$("#total").textContent=projects.length;$("#c11").textContent=projects.filter(p=>String(p.class_level)==="11").length;$("#c12").textContent=projects.filter(p=>String(p.class_level)==="12").length;$("#cats").textContent=new Set(projects.map(p=>p.category)).size;$("#heroCount").textContent=projects.length;const cats=[...new Set(projects.map(p=>p.category).filter(Boolean))].sort();$("#category").innerHTML='<option value="all">All categories</option>'+cats.map(x=>'<option>'+esc(x)+'</option>').join("");$("#grid").querySelectorAll("[data-id]").forEach(b=>b.onclick=()=>openProject(b.dataset.id))}
-function openProject(id){const p=projects.find(x=>x.id===id);if(!p)return;$("#modalPoster").innerHTML=poster(p);$("#modalClass").textContent="Class "+p.class_level;$("#modalTitle").textContent=p.title;$("#modalDesc").textContent=p.description;$("#modalMeta").innerHTML=[p.category,p.chapter,p.practical_no].filter(Boolean).map(x=>"<span>"+esc(x)+"</span>").join("");const v=$("#viewPdf"),d=$("#downloadPdf");v.classList.toggle("hidden",!p.pdf_url);d.classList.toggle("hidden",!p.pdf_url);v.href=p.pdf_url||"#";d.href=p.pdf_url||"#";d.removeAttribute("download");d.textContent="Open PDF";$("#modal").classList.remove("hidden")}
-function closeModal(){$("#modal").classList.add("hidden")}
-async function login(){if(!sb)return alert("Authentication is not configured yet.");const r=await sb.auth.signInWithOAuth({provider:"google",options:{redirectTo:location.href}});if(r.error)alert(r.error.message)}
-async function refreshAuth(){if(!sb)return;const r=await sb.auth.getSession();session=r.data.session;await account();sb.auth.onAuthStateChange(()=>account())}
-async function account(){if(!session?.user){isAdmin=false;$("#loginBtn").classList.remove("hidden");$("#adminBtn").classList.add("hidden");return}$("#loginBtn").classList.add("hidden");const r=await sb.rpc("is_admin");isAdmin=!r.error&&Boolean(r.data);$("#adminBtn").classList.toggle("hidden",!isAdmin)}
+function card(p){const pdf=p.pdf_url;return '<article class="card">'+poster(p)+'<div class="card-body"><span class="pill">Class '+esc(p.class_level)+'</span><h3>'+esc(p.title)+'</h3><p>'+esc(p.description||"Biology project resource.")+'</p><div class="meta"><span>'+esc(p.chapter||"Biology")+'</span><span>'+esc(p.practical_no||"Project")+'</span></div><div class="card-actions"><button class="btn ghost" data-id="'+esc(p.id)+'">Preview</button>'+(pdf?'<a class="btn primary" href="'+esc(pdf)+'" target="_blank" rel="noopener">Open PDF ↗</a>':'<span class="btn soft">PDF pending</span>')+'</div></div></article>'}
+
+async function load(){
+  if(!sb){projects=demo.map(normalize);$("#status").textContent="Published library";render();return}
+  try{
+    const r=await sb.from("projects").select("*").order("created_at",{ascending:false});
+    if(r.error)throw r.error;
+    const remote=(r.data||[]).map(normalize);
+    const keys=new Set(remote.map(p=>p.title));
+    projects=[...remote,...demo.filter(p=>!keys.has(p.title)).map(normalize)];
+    $("#status").textContent=remote.length?"Live library":"Published library";
+  }catch(e){
+    projects=demo.map(normalize);
+    $("#status").textContent="Published library";
+  }
+  render();
+}
+
+function render(){
+  const q=$("#search").value.toLowerCase().trim(),cl=$("#class").value,cat=$("#category").value;
+  const list=projects.filter(p=>(!q||[p.title,p.chapter,p.category,p.description,...(p.tags||[])].join(" ").toLowerCase().includes(q))&&(cl==="all"||String(p.class_level)===cl)&&(cat==="all"||p.category===cat));
+  $("#grid").innerHTML=list.length?list.map(card).join(""):'<div class="empty">No projects match your search.</div>';
+  $("#total").textContent=projects.length;
+  $("#c11").textContent=projects.filter(p=>String(p.class_level)==="11").length;
+  $("#c12").textContent=projects.filter(p=>String(p.class_level)==="12").length;
+  $("#cats").textContent=new Set(projects.map(p=>p.category).filter(Boolean)).size;
+  $("#heroCount").textContent=projects.length;
+  const cats=[...new Set(projects.map(p=>p.category).filter(Boolean))].sort();
+  const selected=$("#category").value;
+  $("#category").innerHTML='<option value="all">All categories</option>'+cats.map(x=>'<option value="'+esc(x)+'">'+esc(x)+'</option>').join("");
+  $("#category").value=cats.includes(selected)?selected:"all";
+  $("#grid").querySelectorAll("[data-id]").forEach(b=>b.onclick=()=>openProject(b.dataset.id));
+}
+
+function openProject(id){
+  const p=projects.find(x=>x.id===id);if(!p)return;
+  $("#modalPoster").innerHTML=poster(p);
+  $("#modalClass").textContent="Class "+(p.class_level||"");
+  $("#modalTitle").textContent=p.title;
+  $("#modalDesc").textContent=p.description||"";
+  $("#modalMeta").innerHTML=[p.category,p.chapter,p.practical_no].filter(Boolean).map(x=>"<span>"+esc(x)+"</span>").join("");
+  const v=$("#viewPdf"),d=$("#downloadPdf"),wrap=$("#previewWrap"),frame=$("#pdfPreview"),none=$("#noPdf");
+  if(p.pdf_url){
+    wrap.classList.remove("hidden");none.classList.add("hidden");
+    frame.src=p.pdf_url;
+    v.classList.remove("hidden");d.classList.remove("hidden");
+    v.href=p.pdf_url;d.href=p.pdf_url;d.setAttribute("download","");
+  }else{
+    wrap.classList.add("hidden");none.classList.remove("hidden");
+    frame.removeAttribute("src");v.classList.add("hidden");d.classList.add("hidden");
+  }
+  $("#modal").classList.remove("hidden");
+}
+
+function closeModal(){ $("#modal").classList.add("hidden"); $("#pdfPreview").removeAttribute("src") }
+
+async function login(){
+  if(!sb){showAuthNote("Authentication is not configured yet.");return}
+  $("#status").textContent="Opening Google sign-in…";
+  const r=await sb.auth.signInWithOAuth({provider:"google",options:{redirectTo:location.href}});
+  if(r.error){$("#status").textContent="Ready";showAuthNote(r.error.message)}
+}
+async function logout(){if(sb)await sb.auth.signOut()}
+async function refreshAuth(){
+  if(!sb)return;
+  const r=await sb.auth.getSession();session=r.data.session;await account();
+  if(!authListener)authListener=sb.auth.onAuthStateChange(async(_event,s)=>{session=s;await account()}).data.subscription;
+}
+async function account(){
+  if(!session?.user){
+    isAdmin=false;$("#loginBtn").classList.remove("hidden");$("#logoutBtn").classList.add("hidden");$("#adminBtn").classList.add("hidden");return;
+  }
+  $("#loginBtn").classList.add("hidden");$("#logoutBtn").classList.remove("hidden");
+  const r=await sb.rpc("is_admin");
+  isAdmin=!r.error&&Boolean(r.data);
+  $("#adminBtn").classList.toggle("hidden",!isAdmin);
+  if(isAdmin)$("#adminMsg").textContent="You are signed in as an approved administrator.";
+}
+function showAuthNote(msg){$("#authNote").textContent=msg;$("#authNote").classList.remove("hidden")}
 function openAdmin(){if(!isAdmin)return;$("#adminPanel").classList.remove("hidden");$("#projectForm").classList.remove("hidden");loadAdmin()}
 function closeAdmin(){$("#adminPanel").classList.add("hidden")}
-async function loadAdmin(){const r=await sb.from("projects").select("*").order("created_at",{ascending:false});$("#adminList").innerHTML=(r.data||[]).map(p=>'<div class="admin-row"><div><b>'+esc(p.title)+'</b><small style="display:block;color:#657a71">Class '+p.class_level+' · '+esc(p.category||"")+'</small></div><button class="btn ghost mini" data-del="'+p.id+'">Delete</button></div>').join("");$("#adminList").querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>delProject(b.dataset.del))}
-async function upload(bucket,path,file){const r=await sb.storage.from(bucket).upload(path,file,{upsert:true,contentType:file.type});if(r.error)throw r.error;return sb.storage.from(bucket).getPublicUrl(path).data.publicUrl}
-$("#projectForm").onsubmit=async e=>{e.preventDefault();try{const id=crypto.randomUUID(),pdf=$("#fPdf").files[0];if(!pdf)throw Error("Choose a PDF.");const pdfPath=id+"/"+Date.now()+"-"+pdf.name.replace(/[^a-z0-9.-]/gi,"-");await upload("project-pdfs",pdfPath,pdf);const data={id,title:$("#fTitle").value.trim(),class_level:$("#fClass").value,practical_no:$("#fTopic").value?"Project Topic "+$("#fTopic").value:"",category:$("#fCategory").value.trim()||"Biology",chapter:$("#fChapter").value.trim(),description:$("#fDesc").value.trim(),tags:$("#fTags").value.split(",").map(x=>x.trim()).filter(Boolean),pdf_path:pdfPath,updated_at:new Date().toISOString()};const r=await sb.from("projects").insert(data);if(r.error)throw r.error;$("#projectForm").reset();await load();await loadAdmin();alert("Project published.");}catch(e){alert(e.message||"Publish failed.")}}
-async function delProject(id){if(!confirm("Delete this project?"))return;const r=await sb.from("projects").delete().eq("id",id);if(r.error)return alert(r.error.message);await load();loadAdmin()}
-$("#search").oninput=render;$("#class").onchange=render;$("#category").onchange=render;$("#loginBtn").onclick=login;$("#adminBtn").onclick=openAdmin;$("#close").onclick=closeModal;$("#adminClose").onclick=closeAdmin;load();refreshAuth();
+async function loadAdmin(){
+  const r=await sb.from("projects").select("*").order("created_at",{ascending:false});
+  $("#adminList").innerHTML=(r.data||[]).map(p=>'<div class="admin-row"><div><b>'+esc(p.title)+'</b><small style="display:block;color:#657a71">Class '+esc(p.class_level)+' · '+esc(p.category||"")+'</small></div><button class="btn ghost mini" data-del="'+esc(p.id)+'">Delete</button></div>').join("");
+  $("#adminList").querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>delProject(b.dataset.del));
+}
+async function upload(bucket,path,file){
+  const r=await sb.storage.from(bucket).upload(path,file,{upsert:true,contentType:file.type||"application/pdf",cacheControl:"3600"});
+  if(r.error)throw r.error;
+  return sb.storage.from(bucket).getPublicUrl(path).data.publicUrl;
+}
+$("#projectForm").onsubmit=async e=>{
+  e.preventDefault();
+  try{
+    const id=crypto.randomUUID(),pdf=$("#fPdf").files[0];if(!pdf)throw Error("Choose a PDF.");
+    if(pdf.type&&pdf.type!=="application/pdf")throw Error("Only PDF files are supported.");
+    const pdfPath=id+"/"+Date.now()+"-"+pdf.name.replace(/[^a-z0-9.-]/gi,"-");
+    const pdfPublic=await upload("project-pdfs",pdfPath,pdf);
+    const data={id,title:$("#fTitle").value.trim(),class_level:$("#fClass").value,practical_no:$("#fTopic").value?"Project Topic "+$("#fTopic").value:"",category:$("#fCategory").value.trim()||"Biology",chapter:$("#fChapter").value.trim(),description:$("#fDesc").value.trim(),tags:$("#fTags").value.split(",").map(x=>x.trim()).filter(Boolean),pdf_path:pdfPath,pdf_url:pdfPublic,updated_at:new Date().toISOString()};
+    const r=await sb.from("projects").insert(data);if(r.error)throw r.error;
+    $("#projectForm").reset();await load();await loadAdmin();alert("Project published.");
+  }catch(e){alert(e.message||"Publish failed.")}
+}
+async function delProject(id){if(!confirm("Delete this project?"))return;const r=await sb.from("projects").delete().eq("id",id);if(r.error)return alert(r.error.message);await load();await loadAdmin()}
+$("#search").oninput=render;$("#class").onchange=render;$("#category").onchange=render;$("#loginBtn").onclick=login;$("#logoutBtn").onclick=logout;$("#adminBtn").onclick=openAdmin;$("#close").onclick=closeModal;$("#adminClose").onclick=closeAdmin;
+window.addEventListener("keydown",e=>{if(e.key==="Escape"){closeModal();closeAdmin()}});
+load();refreshAuth();
