@@ -97,14 +97,34 @@ async function login(){
 async function logout(){if(sb)await sb.auth.signOut()}
 async function refreshAuth(){
   if(!sb)return;
-  const r=await sb.auth.getSession();session=r.data.session;await account();
-  if(!authListener)authListener=sb.auth.onAuthStateChange(async(_event,s)=>{session=s;await account()}).data.subscription;
+  if(!authListener){
+    authListener=sb.auth.onAuthStateChange((_event,s)=>{session=s;queueMicrotask(()=>account())}).data.subscription;
+  }
+  const r=await sb.auth.getSession();
+  session=r.data.session||null;
+  await account();
 }
 async function account(){
-  if(!session?.user){isAdmin=false;$("#loginBtn").classList.remove("hidden");$("#logoutBtn").classList.add("hidden");$("#adminBtn").classList.add("hidden");closeModal();return}
-  $("#loginBtn").classList.add("hidden");$("#logoutBtn").classList.remove("hidden");
-  const r=await sb.rpc("is_admin");isAdmin=!r.error&&Boolean(r.data);$("#adminBtn").classList.toggle("hidden",!isAdmin);
-  if(isAdmin)$("#adminMsg").textContent="You are signed in as an approved administrator.";
+  if(!session?.user){
+    isAdmin=false;
+    $("#loginBtn").classList.remove("hidden");
+    $("#logoutBtn").classList.add("hidden");
+    $("#adminBtn").classList.add("hidden");
+    closeModal();
+    return;
+  }
+  $("#loginBtn").classList.add("hidden");
+  $("#logoutBtn").classList.remove("hidden");
+
+  const adminCheck=await sb.from("admins").select("user_id").eq("user_id",session.user.id).maybeSingle();
+  isAdmin=!adminCheck.error&&Boolean(adminCheck.data);
+
+  if(isAdmin){
+    $("#adminBtn").classList.remove("hidden");
+    $("#adminMsg").textContent="You are signed in as an approved administrator.";
+  }else{
+    $("#adminBtn").classList.add("hidden");
+  }
 }
 function showAuthNote(msg){$("#authNote").textContent=msg;$("#authNote").classList.remove("hidden")}
 function openAdmin(){if(!isAdmin)return;$("#adminPanel").classList.remove("hidden");$("#projectForm").classList.remove("hidden");loadAdmin()}
