@@ -5,6 +5,7 @@ import android.os.Bundle;
 import android.text.TextUtils;
 
 import androidx.annotation.NonNull;
+import androidx.core.content.ContextCompat;
 import androidx.credentials.Credential;
 import androidx.credentials.CredentialManager;
 import androidx.credentials.CredentialManagerCallback;
@@ -160,7 +161,7 @@ public final class GoogleAuthManager {
                 activityContext,
                 request,
                 null,
-                activityContext.getMainExecutor(),
+                ContextCompat.getMainExecutor(activityContext),
                 new CredentialManagerCallback<GetCredentialResponse, GetCredentialException>() {
                     @Override
                     public void onResult(GetCredentialResponse result) {
@@ -245,7 +246,7 @@ public final class GoogleAuthManager {
             credentialManager.clearCredentialStateAsync(
                     new androidx.credentials.ClearCredentialStateRequest(),
                     null,
-                    context.getMainExecutor(),
+                    ContextCompat.getMainExecutor(context),
                     new CredentialManagerCallback<Void, androidx.credentials.exceptions.ClearCredentialException>() {
                         @Override
                         public void onResult(Void result) {
