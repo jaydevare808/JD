@@ -268,9 +268,10 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
 
     private void openNotebook(String id) {
         try {
-            currentNotebook = store.get(id);
-            currentPageIndex = 0;
-            buildEditor();
+            Intent intent = new Intent(this, EditorActivity.class);
+            intent.putExtra("notebook_id", id);
+            intent.putExtra("page_index", 0);
+            startActivity(intent);
         } catch (Exception e) {
             toast("Could not open notebook");
         }
