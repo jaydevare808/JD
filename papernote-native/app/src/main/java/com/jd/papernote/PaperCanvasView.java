@@ -257,7 +257,7 @@ public final class PaperCanvasView extends View {
         drawing = false;
         panning = false;
         activePointerId = -1;
-        requestDisallowInterceptTouchEvent(false);
+        if (getParent() != null) getParent().requestDisallowInterceptTouchEvent(false);
         invalidate();
         if (listener != null) listener.onCanvasDirty();
     }
@@ -419,7 +419,7 @@ public final class PaperCanvasView extends View {
                 activePointerId = event.getPointerId(0);
                 panLastX = event.getX(0);
                 panLastY = event.getY(0);
-                requestDisallowInterceptTouchEvent(true);
+                if (getParent() != null) getParent().requestDisallowInterceptTouchEvent(true);
                 return true;
 
             case MotionEvent.ACTION_MOVE:
@@ -438,7 +438,7 @@ public final class PaperCanvasView extends View {
             case MotionEvent.ACTION_CANCEL:
                 panning = false;
                 activePointerId = -1;
-                requestDisallowInterceptTouchEvent(false);
+                if (getParent() != null) getParent().requestDisallowInterceptTouchEvent(false);
                 return true;
             default:
                 return true;
@@ -460,7 +460,7 @@ public final class PaperCanvasView extends View {
 
                 activePointerId = event.getPointerId(0);
                 drawing = true;
-                requestDisallowInterceptTouchEvent(true);
+                if (getParent() != null) getParent().requestDisallowInterceptTouchEvent(true);
 
                 if (tool == TOOL_PEN || tool == TOOL_HIGHLIGHTER || tool == TOOL_ERASER || isShapeTool(tool)) {
                     beginAction();
@@ -516,7 +516,7 @@ public final class PaperCanvasView extends View {
                     float[] textPoint = screenToPage(event.getX(0), event.getY(0));
                     drawing = false;
                     activePointerId = -1;
-                    requestDisallowInterceptTouchEvent(false);
+                    if (getParent() != null) getParent().requestDisallowInterceptTouchEvent(false);
                     if (listener != null) listener.onRequestText(textPoint[0], textPoint[1]);
                     return true;
                 }
@@ -531,7 +531,7 @@ public final class PaperCanvasView extends View {
                 } else {
                     drawing = false;
                     activePointerId = -1;
-                    requestDisallowInterceptTouchEvent(false);
+                    if (getParent() != null) getParent().requestDisallowInterceptTouchEvent(false);
                 }
                 return true;
 
