@@ -60,7 +60,6 @@ public final class NotebookStore {
                 NotebookMeta meta = parseNotebook(readText(file));
                 result.add(meta);
             } catch (Exception ignored) {
-                // A damaged notebook must not stop the rest of the library from loading.
             }
         }
         result.sort(Comparator.comparingLong((NotebookMeta n) -> n.updatedAt).reversed());
@@ -103,6 +102,13 @@ public final class NotebookStore {
         notebook.updatedAt = System.currentTimeMillis();
     }
 
+    public void deleteNotebook(NotebookMeta notebook) {
+        if (notebook == null) return;
+        for (PageMeta page : notebook.pages) deletePageBitmap(page.id);
+        File meta = metadataFile(notebook.id);
+        if (meta.exists()) meta.delete();
+    }
+
     public void renameNotebook(NotebookMeta notebook, String title, String subject) throws Exception {
         if (title != null && !title.trim().isEmpty()) notebook.title = title.trim();
         if (subject != null && !subject.trim().isEmpty()) notebook.subject = subject.trim();
@@ -124,12 +130,8 @@ public final class NotebookStore {
         File target = metadataFile(meta.id);
         File tmp = new File(target.getParentFile(), target.getName() + ".tmp");
         writeText(tmp, serializeNotebook(meta));
-        if (target.exists() && !target.delete()) {
-            throw new Exception("Unable to replace notebook metadata");
-        }
-        if (!tmp.renameTo(target)) {
-            throw new Exception("Unable to commit notebook metadata");
-        }
+        if (target.exists() && !target.delete()) throw new Exception("Unable to replace notebook metadata");
+        if (!tmp.renameTo(target)) throw new Exception("Unable to commit notebook metadata");
     }
 
     public Bitmap loadPageBitmap(String pageId, int width, int height) {
@@ -149,9 +151,7 @@ public final class NotebookStore {
         File target = pageFile(pageId);
         File tmp = new File(target.getParentFile(), target.getName() + ".tmp");
         try (FileOutputStream out = new FileOutputStream(tmp)) {
-            if (!bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)) {
-                throw new Exception("PNG compression failed");
-            }
+            if (!bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)) throw new Exception("PNG compression failed");
         }
         if (target.exists() && !target.delete()) throw new Exception("Unable to replace page");
         if (!tmp.renameTo(target)) throw new Exception("Unable to commit page");
@@ -190,9 +190,7 @@ public final class NotebookStore {
 
     public NotebookMeta importBackup(String json) throws Exception {
         JSONObject root = new JSONObject(json);
-        if (!"PaperNoteBackup".equals(root.optString("format"))) {
-            throw new Exception("Not a PaperNote backup");
-        }
+        if (!"PaperNoteBackup".equals(root.optString("format"))) throw new Exception("Not a PaperNote backup");
 
         NotebookMeta meta = new NotebookMeta();
         meta.id = UUID.randomUUID().toString();
