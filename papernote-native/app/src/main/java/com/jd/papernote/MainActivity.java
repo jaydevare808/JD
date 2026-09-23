@@ -79,6 +79,7 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
             }
         }
         showHome();
+        UpdateManager.check(this, false);
     }
 
     @Override
@@ -360,6 +361,9 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
         toolsScroll.addView(tools);
         root.addView(toolsScroll);
 
+        HorizontalScrollView controlScroll = new HorizontalScrollView(this);
+        controlScroll.setHorizontalScrollBarEnabled(false);
+
         LinearLayout controlBar = new LinearLayout(this);
         controlBar.setGravity(Gravity.CENTER_VERTICAL);
         controlBar.setPadding(dp(10), dp(5), dp(10), dp(5));
@@ -380,6 +384,23 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
         });
         controlBar.addView(size, new LinearLayout.LayoutParams(dp(170), dp(42)));
 
+        TextView smoothLabel = text("Smooth", 12, 0xFF596273, true);
+        LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(-2, dp(42));
+        slp.setMargins(dp(12), 0, 0, 0);
+        controlBar.addView(smoothLabel, slp);
+
+        SeekBar smooth = new SeekBar(this);
+        smooth.setMax(25);
+        smooth.setProgress(6);
+        smooth.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                canvasView.setStabilizer(progress / 100f);
+            }
+            @Override public void onStartTrackingTouch(SeekBar seekBar) {}
+            @Override public void onStopTrackingTouch(SeekBar seekBar) {}
+        });
+        controlBar.addView(smooth, new LinearLayout.LayoutParams(dp(145), dp(42)));
+
         Button color = toolbarButton("INK");
         color.setOnClickListener(v -> showColorDialog());
         controlBar.addView(color);
@@ -399,7 +420,8 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
         });
         controlBar.addView(soundButton);
 
-        root.addView(controlBar);
+        controlScroll.addView(controlBar);
+        root.addView(controlScroll, new LinearLayout.LayoutParams(-1, dp(54)));
 
         FrameLayout canvasFrame = new FrameLayout(this);
         canvasView = new PaperCanvasView(this);
@@ -616,6 +638,7 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
         menu.getMenu().add("Backup notebook");
         menu.getMenu().add("Restore backup");
         menu.getMenu().add("About passive stylus");
+        menu.getMenu().add("Check for update");
         menu.getMenu().add("Delete notebook");
         menu.setOnMenuItemClickListener(item -> {
             String title = item.getTitle().toString();
@@ -650,6 +673,9 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
                             )
                             .setPositiveButton("OK", null)
                             .show();
+                    return true;
+                case "Check for update":
+                    UpdateManager.check(this, true);
                     return true;
                 case "Delete notebook":
                     confirmDeleteNotebook();
