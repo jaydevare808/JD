@@ -52,10 +52,33 @@ public final class UpdateManager {
                 int local = versionCode(BuildConfig.VERSION_NAME);
 
                 String releaseUrl = release.optString("html_url", "");
-                if (remote > local && releaseUrl != null && !releaseUrl.isEmpty()) {
-                    String finalReleaseUrl = releaseUrl;
+                String apkUrl = "";
+                long apkSize = 0L;
+
+                JSONArray assets = release.optJSONArray("assets");
+                if (assets != null) {
+                    for (int i = 0; i < assets.length(); i++) {
+                        JSONObject asset = assets.optJSONObject(i);
+                        if (asset == null) continue;
+                        if (APK_NAME.equals(asset.optString("name", ""))) {
+                            apkUrl = asset.optString("browser_download_url", "");
+                            apkSize = asset.optLong("size", 0L);
+                            break;
+                        }
+                    }
+                }
+
+                String finalApkUrl = apkUrl;
+                long finalApkSize = apkSize;
+                if (remote > local && !finalApkUrl.isEmpty()) {
                     activity.runOnUiThread(() ->
-                            showUpdateDialog(activity, tag, release.optString("body", ""), finalReleaseUrl));
+                            showUpdateDialog(
+                                    activity,
+                                    tag,
+                                    release.optString("body", ""),
+                                    finalApkUrl,
+                                    finalApkSize
+                            ));
                 } else if (manual) {
                     activity.runOnUiThread(() ->
                             Toast.makeText(activity, "PaperNote is up to date.", Toast.LENGTH_SHORT).show());
@@ -71,7 +94,13 @@ public final class UpdateManager {
         });
     }
 
-    private static void showUpdateDialog(Activity activity, String tag, String notes, String apkUrl, long size) {
+    private static void showUpdateDialog(
+            Activity activity,
+            String tag,
+            String notes,
+            String apkUrl,
+            long size
+    ) {
         String message = "A newer PaperNote version is available.\n\n" +
                 "Version: " + tag + "\n" +
                 "Download: " + formatSize(size) + "\n\n" +
@@ -195,7 +224,7 @@ public final class UpdateManager {
     private static int versionCode(String value) {
         if (value == null) return 0;
         String clean = value.trim().replaceFirst("^[vV]", "");
-        String[] parts = clean.split("\\\\.");
+        String[] parts = clean.split("\\.");
         int major = parts.length > 0 ? parse(parts[0]) : 0;
         int minor = parts.length > 1 ? parse(parts[1]) : 0;
         int patch = parts.length > 2 ? parse(parts[2]) : 0;
