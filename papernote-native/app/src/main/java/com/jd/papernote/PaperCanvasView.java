@@ -633,7 +633,7 @@ public final class PaperCanvasView extends View {
 
         if (Math.hypot(targetX - x1, targetY - y1) < 0.15f) return;
 
-        Paint p = configureStrokePaint(tool == TOOL.ERASER);
+        Paint p = configureStrokePaint(tool == TOOL_ERASER);
         p.setStrokeCap(Paint.Cap.ROUND);
         p.setStrokeJoin(Paint.Join.ROUND);
         p.setStrokeWidth(getEffectiveWidth(pressure, toolType));
