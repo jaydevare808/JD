@@ -503,7 +503,7 @@ public final class PaperCanvasView extends View {
                 float[] current = screenToPage(event.getX(index), event.getY(index));
 
                 if (tool == TOOL_PEN || tool == TOOL_HIGHLIGHTER || tool == TOOL_ERASER) {
-                    for (int h = 0; h < event.getHistorySize(index); h++) {
+                    for (int h = 0; h < event.getHistorySize(); h++) {
                         float[] hp = screenToPage(
                                 event.getHistoricalX(index, h),
                                 event.getHistoricalY(index, h)
@@ -616,7 +616,7 @@ public final class PaperCanvasView extends View {
 
     private void drawDot(float x, float y, float pressure, int toolType) {
         if (inkBitmap == null) return;
-        Paint p = configureStrokePaint(tool == TOOL.ERASER);
+        Paint p = configureStrokePaint(tool == TOOL_ERASER);
         p.setStrokeCap(Paint.Cap.ROUND);
         p.setStrokeWidth(getEffectiveWidth(pressure, toolType));
         Canvas c = new Canvas(inkBitmap);
