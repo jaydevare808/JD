@@ -124,7 +124,7 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
         root.setGravity(Gravity.CENTER_HORIZONTAL);
         root.setPadding(dp(26), dp(30), dp(26), dp(24));
 
-        TextView topBadge = text("PAPERNOTE 1.6  •  STUDY EDITION", 10, 0xFF5D6B86, true);
+        TextView topBadge = text("PAPERNOTE 1.7  •  STUDY EDITION", 10, 0xFF5D6B86, true);
         topBadge.setGravity(Gravity.CENTER);
         topBadge.setBackground(rounded(0xFFE9EEFF, 22));
         LinearLayout.LayoutParams badgeParams = new LinearLayout.LayoutParams(-1, dp(34));
@@ -210,6 +210,20 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
         if (!authManager.isConfigured()) {
             google.setEnabled(false);
             status.setText(authManager.getConfigurationMessage());
+        } else {
+            authManager.consumePendingSignIn(new GoogleAuthManager.Callback() {
+                @Override public void onSuccess(com.google.firebase.auth.FirebaseUser user) {
+                    getPreferences(MODE_PRIVATE)
+                            .edit()
+                            .putBoolean("papernote_offline_mode", false)
+                            .apply();
+                    runOnUiThread(() -> showHome());
+                }
+
+                @Override public void onError(String message) {
+                    // No pending sign-in is normal. Do not interrupt the welcome screen.
+                }
+            });
         }
 
         google.setOnClickListener(v -> {
