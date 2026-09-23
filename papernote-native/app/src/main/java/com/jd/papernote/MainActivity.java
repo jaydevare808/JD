@@ -116,74 +116,126 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
 
 
     private void showWelcome() {
+        FrameLayout frame = new FrameLayout(this);
+        frame.setBackgroundColor(0xFFF6F8FC);
+
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setGravity(Gravity.CENTER_HORIZONTAL);
-        root.setPadding(dp(28), dp(34), dp(28), dp(28));
-        root.setBackgroundColor(Color.rgb(246, 247, 250));
+        root.setPadding(dp(26), dp(30), dp(26), dp(24));
+
+        TextView topBadge = text("PAPERNOTE 1.6  •  STUDY EDITION", 10, 0xFF5D6B86, true);
+        topBadge.setGravity(Gravity.CENTER);
+        topBadge.setBackground(rounded(0xFFE9EEFF, 22));
+        LinearLayout.LayoutParams badgeParams = new LinearLayout.LayoutParams(-1, dp(34));
+        root.addView(topBadge, badgeParams);
 
         Space top = new Space(this);
-        root.addView(top, new LinearLayout.LayoutParams(1, 0, 0.65f));
+        root.addView(top, new LinearLayout.LayoutParams(1, 0, 0.7f));
 
-        TextView logo = text("P", 44, Color.WHITE, true);
+        TextView logo = text("P", 46, Color.WHITE, true);
         logo.setGravity(Gravity.CENTER);
-        logo.setBackground(rounded(Color.rgb(64, 93, 230), 22));
-        root.addView(logo, new LinearLayout.LayoutParams(dp(92), dp(92)));
+        logo.setBackground(rounded(0xFF536DFE, 26));
+        logo.setElevation(dp(10));
+        root.addView(logo, new LinearLayout.LayoutParams(dp(104), dp(104)));
 
-        TextView title = text("PaperNote", 32, Color.rgb(23, 32, 51), true);
+        TextView title = text("PaperNote", 34, 0xFF182339, true);
         title.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(-1, -2);
-        titleLp.setMargins(0, dp(20), 0, 0);
-        root.addView(title, titleLp);
+        LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(-1, -2);
+        titleParams.setMargins(0, dp(18), 0, 0);
+        root.addView(title, titleParams);
 
         TextView subtitle = text(
-                "Your digital study notebook\\nWrite naturally. Practice without paper. Stay organized.",
+                "Your focused digital notebook for handwritten study.\\nWrite, revise, organize and export without paper.",
                 15, 0xFF667085, false
         );
         subtitle.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams subLp = new LinearLayout.LayoutParams(-1, -2);
-        subLp.setMargins(0, dp(8), 0, 0);
-        root.addView(subtitle, subLp);
+        LinearLayout.LayoutParams subtitleParams = new LinearLayout.LayoutParams(-1, -2);
+        subtitleParams.setMargins(0, dp(7), 0, 0);
+        root.addView(subtitle, subtitleParams);
 
         LinearLayout featureCard = new LinearLayout(this);
         featureCard.setOrientation(LinearLayout.VERTICAL);
-        featureCard.setPadding(dp(18), dp(16), dp(18), dp(16));
-        featureCard.setBackground(rounded(Color.WHITE, 18));
-        TextView featureTitle = text("Built for study", 16, Color.rgb(23, 32, 51), true);
-        featureCard.addView(featureTitle);
-        featureCard.addView(text("Low-latency handwriting • Maths/Physics paper • PDF export • Offline notes • Focus tools", 13, 0xFF667085, false));
-        LinearLayout.LayoutParams fcLp = new LinearLayout.LayoutParams(-1, -2);
-        fcLp.setMargins(0, dp(22), 0, 0);
-        root.addView(featureCard, fcLp);
+        featureCard.setPadding(dp(18), dp(16), dp(18), dp(14));
+        featureCard.setBackground(rounded(Color.WHITE, 20));
+        featureCard.setElevation(dp(3));
+
+        TextView cardTitle = text("Built around your study flow", 16, 0xFF182339, true);
+        featureCard.addView(cardTitle);
+
+        LinearLayout featureRow = new LinearLayout(this);
+        featureRow.setGravity(Gravity.CENTER_VERTICAL);
+        featureRow.setPadding(0, dp(11), 0, 0);
+        addFeature(featureRow, "✍", "Fast handwriting");
+        addFeature(featureRow, "✓", "Auto-save");
+        addFeature(featureRow, "⇩", "PDF + images");
+        featureCard.addView(featureRow);
+
+        LinearLayout.LayoutParams featureParams = new LinearLayout.LayoutParams(-1, -2);
+        featureParams.setMargins(0, dp(22), 0, 0);
+        root.addView(featureCard, featureParams);
 
         Button google = styledButton("Continue with Google", true);
-        LinearLayout.LayoutParams gp = new LinearLayout.LayoutParams(-1, dp(52));
-        gp.setMargins(0, dp(20), 0, dp(10));
-        root.addView(google, gp);
+        google.setTextSize(15);
+        google.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
+        LinearLayout.LayoutParams googleParams = new LinearLayout.LayoutParams(-1, dp(54));
+        googleParams.setMargins(0, dp(18), 0, dp(10));
+        root.addView(google, googleParams);
 
         TextView status = text("", 12, 0xFF667085, false);
         status.setGravity(Gravity.CENTER);
         root.addView(status);
 
+        Button offline = styledButton("Continue offline", false);
+        offline.setTextSize(14);
+        LinearLayout.LayoutParams offlineParams = new LinearLayout.LayoutParams(-1, dp(50));
+        offlineParams.setMargins(0, dp(10), 0, 0);
+        root.addView(offline, offlineParams);
+
+        TextView footer = text(
+                "Google sign-in syncs account identity. Your current notebook data stays on this device.",
+                11, 0xFF8A93A3, false
+        );
+        footer.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams footerParams = new LinearLayout.LayoutParams(-1, -2);
+        footerParams.setMargins(0, dp(16), 0, 0);
+        root.addView(footer, footerParams);
+
+        Space bottom = new Space(this);
+        root.addView(bottom, new LinearLayout.LayoutParams(1, 0, 1f));
+        frame.addView(root, new FrameLayout.LayoutParams(-1, -1));
+        setContentView(frame);
+
+        GoogleAuthManager authManager = GoogleAuthManager.get(this);
+        if (!authManager.isConfigured()) {
+            google.setEnabled(false);
+            status.setText(authManager.getConfigurationMessage());
+        }
+
         google.setOnClickListener(v -> {
             google.setEnabled(false);
-            google.setText("Connecting…");
-            GoogleAuthManager.get(this).signIn(this, new GoogleAuthManager.Callback() {
-                @Override
-                public void onSuccess(com.google.firebase.auth.FirebaseUser user) {
-                    getPreferences(MODE_PRIVATE).edit().putBoolean("papernote_offline_mode", false).apply();
+            google.setText("Signing in…");
+            status.setText("Waiting for Google account…");
+
+            authManager.signIn(this, new GoogleAuthManager.Callback() {
+                @Override public void onSuccess(com.google.firebase.auth.FirebaseUser user) {
+                    getPreferences(MODE_PRIVATE)
+                            .edit()
+                            .putBoolean("papernote_offline_mode", false)
+                            .apply();
+
                     runOnUiThread(() -> {
-                        google.setEnabled(true);
+                        status.setText("Signed in");
                         google.setText("Continue with Google");
+                        google.setEnabled(true);
                         showHome();
                     });
                 }
 
-                @Override
-                public void onError(String message) {
+                @Override public void onError(String message) {
                     runOnUiThread(() -> {
-                        google.setEnabled(true);
                         google.setText("Continue with Google");
+                        google.setEnabled(true);
                         status.setText(message);
                         new AlertDialog.Builder(MainActivity.this)
                                 .setTitle("Google sign-in")
@@ -195,96 +247,148 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
             });
         });
 
-        Button offline = styledButton("Continue offline", false);
-        LinearLayout.LayoutParams op = new LinearLayout.LayoutParams(-1, dp(50));
-        root.addView(offline, op);
         offline.setOnClickListener(v -> {
-            getPreferences(MODE_PRIVATE).edit().putBoolean("papernote_offline_mode", true).apply();
+            getPreferences(MODE_PRIVATE)
+                    .edit()
+                    .putBoolean("papernote_offline_mode", true)
+                    .apply();
             showHome();
         });
 
-        TextView footer = text(
-                "Your notes remain on this device while offline. Google sign-in is used for account identity; cloud notebook sync will be added separately.",
-                11, 0xFF8A93A3, false
-        );
-        footer.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams fp = new LinearLayout.LayoutParams(-1, -2);
-        fp.setMargins(0, dp(18), 0, 0);
-        root.addView(footer, fp);
+        // Staggered entrance animation gives the launch screen a polished, calm feel.
+        View[] animated = {topBadge, logo, title, subtitle, featureCard, google, status, offline, footer};
+        for (int i = 0; i < animated.length; i++) {
+            View view = animated[i];
+            view.setAlpha(0f);
+            view.setTranslationY(dp(18));
+            view.animate()
+                    .alpha(1f)
+                    .translationY(0f)
+                    .setStartDelay(90L + i * 55L)
+                    .setDuration(360L)
+                    .setInterpolator(new android.view.animation.DecelerateInterpolator())
+                    .start();
+        }
 
-        Space bottom = new Space(this);
-        root.addView(bottom, new LinearLayout.LayoutParams(1, 0, 1f));
+        logo.setScaleX(0.72f);
+        logo.setScaleY(0.72f);
+        logo.animate()
+                .scaleX(1f)
+                .scaleY(1f)
+                .setStartDelay(100L)
+                .setDuration(520L)
+                .setInterpolator(new android.view.animation.OvershootInterpolator())
+                .start();
+    }
 
-        setContentView(root);
+    private void addFeature(LinearLayout row, String icon, String label) {
+        LinearLayout item = new LinearLayout(this);
+        item.setOrientation(LinearLayout.VERTICAL);
+        item.setGravity(Gravity.CENTER);
+        TextView iconView = text(icon, 18, 0xFF536DFE, true);
+        iconView.setGravity(Gravity.CENTER);
+        item.addView(iconView, new LinearLayout.LayoutParams(-1, dp(26)));
+        TextView labelView = text(label, 10, 0xFF667085, false);
+        labelView.setGravity(Gravity.CENTER);
+        item.addView(labelView);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, -2, 1f);
+        row.addView(item, params);
     }
 
     private void showHome() {
         currentNotebook = null;
+
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(Color.rgb(246, 247, 250));
+        root.setBackgroundColor(0xFFF6F8FC);
 
         LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.VERTICAL);
-        header.setPadding(dp(22), dp(24), dp(22), dp(18));
-        header.setBackgroundColor(Color.rgb(23, 32, 51));
+        header.setPadding(dp(22), dp(22), dp(22), dp(20));
+        header.setBackgroundColor(0xFF182339);
+        header.setElevation(dp(5));
 
-        TextView brand = text("PaperNote", 30, Color.WHITE, true);
-        TextView subtitle = text("A handwriting-first study notebook for Maths, Physics, Chemistry and everyday learning.", 14, 0xFFD5DCE8, false);
-        subtitle.setPadding(0, dp(6), 0, 0);
+        LinearLayout headerRow = new LinearLayout(this);
+        headerRow.setGravity(Gravity.CENTER_VERTICAL);
 
-        LinearLayout brandRow = new LinearLayout(this);
-        brandRow.setGravity(Gravity.CENTER_VERTICAL);
-        brandRow.addView(brand, new LinearLayout.LayoutParams(0, -2, 1f));
+        LinearLayout brandBox = new LinearLayout(this);
+        brandBox.setOrientation(LinearLayout.VERTICAL);
+
+        TextView brand = text("PaperNote", 29, Color.WHITE, true);
+        TextView tagline = text("Your study desk, wherever you are.", 12, 0xFFC9D2E1, false);
+        brandBox.addView(brand);
+        brandBox.addView(tagline);
+        headerRow.addView(brandBox, new LinearLayout.LayoutParams(0, -2, 1f));
+
         Button account = toolbarButton("ACCOUNT");
+        account.setTextColor(Color.WHITE);
+        account.setBackground(rounded(0xFF2A3854, 14));
         account.setOnClickListener(v -> showAccountDialog());
-        brandRow.addView(account);
-        header.addView(brandRow);
-        header.addView(subtitle);
+        headerRow.addView(account);
+
+        header.addView(headerRow);
+
+        LinearLayout stats = new LinearLayout(this);
+        stats.setGravity(Gravity.CENTER_VERTICAL);
+        stats.setPadding(0, dp(14), 0, 0);
+
+        List<NotebookStore.NotebookMeta> notebooks = store.list();
+        int totalPages = 0;
+        for (NotebookStore.NotebookMeta n : notebooks) totalPages += n.pages.size();
+
+        TextView notebookStat = text(notebooks.size() + " notebooks", 12, 0xFFE6EBF4, true);
+        TextView pageStat = text(totalPages + " saved pages", 12, 0xFFE6EBF4, true);
+        stats.addView(notebookStat, new LinearLayout.LayoutParams(0, -2, 1f));
+        stats.addView(pageStat, new LinearLayout.LayoutParams(0, -2, 1f));
+        header.addView(stats);
+
         root.addView(header);
 
-        LinearLayout actionRow = new LinearLayout(this);
-        actionRow.setGravity(Gravity.CENTER_VERTICAL);
-        actionRow.setPadding(dp(16), dp(14), dp(16), dp(8));
+        LinearLayout actions = new LinearLayout(this);
+        actions.setGravity(Gravity.CENTER_VERTICAL);
+        actions.setPadding(dp(16), dp(15), dp(16), dp(7));
 
         Button newButton = styledButton("+ New notebook", true);
+        newButton.setTextSize(14);
         newButton.setOnClickListener(v -> showNewNotebookDialog(null, null, PaperCanvasView.PAPER_RULED));
-        actionRow.addView(newButton, new LinearLayout.LayoutParams(0, dp(48), 1f));
+        actions.addView(newButton, new LinearLayout.LayoutParams(0, dp(48), 1f));
 
         Button restoreButton = styledButton("Restore", false);
         restoreButton.setOnClickListener(v -> chooseRestoreFile());
-        LinearLayout.LayoutParams rb = new LinearLayout.LayoutParams(dp(100), dp(48));
-        rb.setMargins(dp(10), 0, 0, 0);
-        actionRow.addView(restoreButton, rb);
-        root.addView(actionRow);
+        LinearLayout.LayoutParams restoreParams = new LinearLayout.LayoutParams(dp(100), dp(48));
+        restoreParams.setMargins(dp(10), 0, 0, 0);
+        actions.addView(restoreButton, restoreParams);
+        root.addView(actions);
 
         EditText search = new EditText(this);
-        search.setHint("Search notebooks…");
+        search.setHint("Search by notebook or subject");
         search.setSingleLine(true);
-        search.setTextSize(15);
+        search.setTextSize(14);
         search.setPadding(dp(16), 0, dp(16), 0);
-        GradientDrawable searchBg = rounded(0xFFFFFFFF, 14);
-        search.setBackground(searchBg);
-        LinearLayout.LayoutParams searchLp = new LinearLayout.LayoutParams(-1, dp(48));
-        searchLp.setMargins(dp(16), dp(6), dp(16), dp(12));
-        root.addView(search, searchLp);
+        search.setBackground(rounded(Color.WHITE, 16));
+        LinearLayout.LayoutParams searchParams = new LinearLayout.LayoutParams(-1, dp(48));
+        searchParams.setMargins(dp(16), dp(5), dp(16), dp(10));
+        root.addView(search, searchParams);
 
         HorizontalScrollView chipsScroll = new HorizontalScrollView(this);
         chipsScroll.setHorizontalScrollBarEnabled(false);
         LinearLayout chips = new LinearLayout(this);
-        chips.setPadding(dp(16), 0, dp(16), dp(10));
-        addChip(chips, "Math Practice", () -> showNewNotebookDialog("Math Practice", "Mathematics", PaperCanvasView.PAPER_GRAPH));
+        chips.setPadding(dp(16), 0, dp(16), dp(12));
+        addChip(chips, "Math", () -> showNewNotebookDialog("Math Practice", "Mathematics", PaperCanvasView.PAPER_GRAPH));
         addChip(chips, "Physics", () -> showNewNotebookDialog("Physics Notes", "Physics", PaperCanvasView.PAPER_RULED));
         addChip(chips, "Chemistry", () -> showNewNotebookDialog("Chemistry Notes", "Chemistry", PaperCanvasView.PAPER_RULED));
-        addChip(chips, "Blank Notebook", () -> showNewNotebookDialog("New Notebook", "General Study", PaperCanvasView.PAPER_BLANK));
+        addChip(chips, "Quick Blank", () -> showNewNotebookDialog("New Notebook", "General Study", PaperCanvasView.PAPER_BLANK));
         chipsScroll.addView(chips);
         root.addView(chipsScroll);
 
+        TextView section = text("MY NOTEBOOKS", 11, 0xFF7A8495, true);
+        section.setPadding(dp(17), dp(2), dp(17), dp(7));
+        root.addView(section);
+
         LinearLayout list = new LinearLayout(this);
         list.setOrientation(LinearLayout.VERTICAL);
-        list.setPadding(dp(16), 0, dp(16), dp(16));
+        list.setPadding(dp(16), 0, dp(16), dp(18));
 
-        List<NotebookStore.NotebookMeta> notebooks = store.list();
         for (NotebookStore.NotebookMeta notebook : notebooks) {
             addNotebookCard(list, notebook);
         }
@@ -311,8 +415,14 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
             }
             @Override public void afterTextChanged(android.text.Editable s) {}
         });
-    }
 
+        header.setAlpha(0f);
+        header.setTranslationY(-dp(12));
+        header.animate().alpha(1f).translationY(0f)
+                .setDuration(320)
+                .setInterpolator(new android.view.animation.DecelerateInterpolator())
+                .start();
+    }
 
     private void showAccountDialog() {
         GoogleAuthManager authManager = GoogleAuthManager.get(this);
@@ -347,6 +457,8 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(17), dp(14), dp(14), dp(14));
         card.setBackground(rounded(0xFFFFFFFF, 18));
+        card.setElevation(dp(2));
+        card.setOnClickListener(v -> openNotebook(notebook.id));
 
         LinearLayout row = new LinearLayout(this);
         row.setGravity(Gravity.CENTER_VERTICAL);
