@@ -570,6 +570,8 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
         String current = currentNotebook.pages.get(currentPageIndex).paperType;
         for (int i = 0; i < values.length; i++) if (values[i].equals(current)) checked = i;
 
+        final int defaultChecked = checked;
+
         AlertDialog dialog = new AlertDialog.Builder(this)
                 .setTitle("Paper template")
                 .setSingleChoiceItems(items, checked, null)
@@ -580,7 +582,7 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
         dialog.setOnShowListener(d -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
             ListViewCompat selection = new ListViewCompat(dialog);
             int which = selection.getCheckedItemPosition();
-            if (which < 0) which = checked;
+            if (which < 0) which = defaultChecked;
             currentNotebook.pages.get(currentPageIndex).paperType = values[which];
             canvasView.setPaperType(values[which]);
             saveCurrentPage();
