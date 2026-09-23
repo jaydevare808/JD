@@ -705,9 +705,32 @@ public final class PaperCanvasView extends View {
             liveCurveEndY = midY;
         }
 
+        // Eraser is applied immediately to the backing bitmap while the user moves.
+        // It is NOT deferred until ACTION_UP, so the page visibly erases under the
+        // stylus/finger exactly as it would on a physical page.
+        if (tool == TOOL_ERASER && inkBitmap != null) {
+            drawImmediateEraserSegment(liveLastX, liveLastY, x, y);
+        }
+
         liveLastX = x;
         liveLastY = y;
         liveStrokeMoved = true;
+    }
+
+    private void drawImmediateEraserSegment(float x1, float y1, float x2, float y2) {
+        if (inkBitmap == null) return;
+
+        Paint eraser = new Paint(Paint.ANTI_ALIAS_FLAG);
+        eraser.setStyle(Paint.Style.STROKE);
+        eraser.setStrokeCap(Paint.Cap.ROUND);
+        eraser.setStrokeJoin(Paint.Join.ROUND);
+        eraser.setStrokeWidth(Math.max(8f, penSize * 3.2f));
+        eraser.setColor(Color.TRANSPARENT);
+        eraser.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.CLEAR));
+
+        Canvas bitmapCanvas = new Canvas(inkBitmap);
+        bitmapCanvas.drawLine(x1, y1, x2, y2, eraser);
+        eraser.setXfermode(null);
     }
 
     private void commitLiveStroke() {
@@ -721,8 +744,21 @@ public final class PaperCanvasView extends View {
             points.add(new PointF(point.x, point.y));
         }
 
-        execute(new StrokeCommand(points, inkColor, penSize, tool));
-        cancelLiveStroke();
+        if (tool == TOOL_ERASER) {
+            // The erase has already been applied live. Add the command to history only;
+            // executing it again is unnecessary and can create extra work on large strokes.
+            undo.addLast(new StrokeCommand(points, inkColor, penSize, tool));
+            while (undo.size() > 80) {
+                EditCommand old = undo.removeFirst();
+                old.release();
+            }
+            releaseRedo();
+            notifyDirty();
+            cancelLiveStroke();
+        } else {
+            execute(new StrokeCommand(points, inkColor, penSize, tool));
+            cancelLiveStroke();
+        }
     }
 
     private void cancelLiveStroke() {
