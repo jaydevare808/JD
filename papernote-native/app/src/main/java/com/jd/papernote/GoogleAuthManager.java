@@ -1,7 +1,7 @@
 package com.jd.papernote;
 
+import android.app.Activity;
 import android.content.Context;
-import android.os.Bundle;
 import android.text.TextUtils;
 
 import androidx.annotation.NonNull;
@@ -16,26 +16,22 @@ import androidx.credentials.exceptions.GetCredentialException;
 
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption;
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential;
-import com.google.android.libraries.identity.googleid.GoogleIdTokenParsingException;
 import com.google.firebase.FirebaseApp;
-import com.google.firebase.FirebaseOptions;
 import com.google.firebase.auth.AuthCredential;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
 import com.google.firebase.auth.GoogleAuthProvider;
 
-import org.json.JSONArray;
-import org.json.JSONObject;
-
-import java.io.BufferedReader;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.util.Base64;
-import java.util.concurrent.Executor;
-import java.util.concurrent.Executors;
 
+/**
+ * PaperNote Google authentication backed by Firebase Authentication.
+ *
+ * Firebase is initialized automatically by FirebaseInitProvider from the
+ * standard google-services Gradle plugin setup. The Web OAuth client ID is
+ * generated as R.string.default_web_client_id.
+ */
 public final class GoogleAuthManager {
     public interface Callback {
         void onSuccess(FirebaseUser user);
@@ -45,7 +41,6 @@ public final class GoogleAuthManager {
     private static volatile GoogleAuthManager instance;
 
     private final Context appContext;
-    private final Executor callbackExecutor = Executors.newSingleThreadExecutor();
     private CredentialManager credentialManager;
     private FirebaseAuth auth;
     private String webClientId;
@@ -60,7 +55,9 @@ public final class GoogleAuthManager {
     public static GoogleAuthManager get(Context context) {
         if (instance == null) {
             synchronized (GoogleAuthManager.class) {
-                if (instance == null) instance = new GoogleAuthManager(context);
+                if (instance == null) {
+                    instance = new GoogleAuthManager(context);
+                }
             }
         }
         return instance;
@@ -68,61 +65,21 @@ public final class GoogleAuthManager {
 
     private void initialize() {
         try {
-            FirebaseApp app;
-            if (!FirebaseApp.getApps(appContext).isEmpty()) {
-                app = FirebaseApp.getInstance();
-            } else {
-                String json = readAsset("google-services.json");
-                JSONObject root = new JSONObject(json);
-
-                JSONObject projectInfo = root.getJSONObject("project_info");
-                JSONArray clients = root.getJSONArray("client");
-                JSONObject client = clients.getJSONObject(0);
-                JSONObject clientInfo = client.getJSONObject("client_info");
-                String applicationId = clientInfo.getString("mobilesdk_app_id");
-                String apiKey = client.getJSONArray("api_key").getJSONObject(0).getString("current_key");
-
-                String projectId = projectInfo.getString("project_id");
-                String senderId = projectInfo.optString("project_number", null);
-                String storageBucket = projectInfo.optString("storage_bucket", null);
-
-                webClientId = findWebClientId(root);
-
-                if (isPlaceholder(applicationId) || isPlaceholder(apiKey)
-                        || isPlaceholder(projectId) || TextUtils.isEmpty(webClientId)
-                        || isPlaceholder(webClientId)) {
-                    configured = false;
-                    configurationMessage =
-                            "Google sign-in is prepared but your Firebase project configuration is not connected yet.";
-                    return;
-                }
-
-                FirebaseOptions.Builder builder = new FirebaseOptions.Builder()
-                        .setApplicationId(applicationId)
-                        .setApiKey(apiKey)
-                        .setProjectId(projectId);
-
-                if (!TextUtils.isEmpty(senderId)) builder.setGcmSenderId(senderId);
-                if (!TextUtils.isEmpty(storageBucket)) builder.setStorageBucket(storageBucket);
-
-                app = FirebaseApp.initializeApp(appContext, builder.build());
-            }
-
-            if (app == null) {
-                configured = false;
-                configurationMessage = "Firebase could not be initialized.";
-                return;
-            }
-
+            FirebaseApp app = FirebaseApp.getInstance();
             auth = FirebaseAuth.getInstance(app);
             credentialManager = CredentialManager.create(appContext);
-            configured = !TextUtils.isEmpty(webClientId);
-            configurationMessage = configured ? null
-                    : "The Firebase web OAuth client ID is missing.";
+            webClientId = appContext.getString(R.string.default_web_client_id);
+
+            configured = !TextUtils.isEmpty(webClientId)
+                    && webClientId.endsWith(".apps.googleusercontent.com");
+
+            configurationMessage = configured
+                    ? null
+                    : "Google sign-in configuration is incomplete. Check google-services.json and rebuild.";
         } catch (Exception e) {
             configured = false;
             configurationMessage =
-                    "Google sign-in is not configured yet. Upload your Firebase google-services.json file to finish setup.";
+                    "Firebase could not initialize. Make sure google-services.json is in the app module and Google Sign-In is enabled in Firebase.";
         }
     }
 
@@ -138,70 +95,55 @@ public final class GoogleAuthManager {
         return auth == null ? null : auth.getCurrentUser();
     }
 
-    public void signIn(Context activityContext, Callback callback) {
+    public void signIn(Activity activity, Callback callback) {
         if (!isConfigured()) {
-            callback.onError(getConfigurationMessage() == null
+            callback.onError(configurationMessage == null
                     ? "Google sign-in is unavailable."
-                    : getConfigurationMessage());
+                    : configurationMessage);
             return;
         }
+        requestCredential(activity, true, callback);
+    }
 
-        GetGoogleIdOption googleIdOption = new GetGoogleIdOption.Builder()
-                .setFilterByAuthorizedAccounts(true)
-                .setServerClientId(webClientId)
-                .setAutoSelectEnabled(true)
-                .setNonce(generateNonce())
-                .build();
+    private void requestCredential(Activity activity, boolean authorizedOnly, Callback callback) {
+        try {
+            GetGoogleIdOption option = new GetGoogleIdOption.Builder()
+                    .setFilterByAuthorizedAccounts(authorizedOnly)
+                    .setServerClientId(webClientId)
+                    .setAutoSelectEnabled(!authorizedOnly)
+                    .setNonce(generateNonce())
+                    .build();
 
-        GetCredentialRequest request = new GetCredentialRequest.Builder()
-                .addCredentialOption(googleIdOption)
-                .build();
+            GetCredentialRequest request = new GetCredentialRequest.Builder()
+                    .addCredentialOption(option)
+                    .build();
 
-        credentialManager.getCredentialAsync(
-                activityContext,
-                request,
-                null,
-                ContextCompat.getMainExecutor(activityContext),
-                new CredentialManagerCallback<GetCredentialResponse, GetCredentialException>() {
-                    @Override
-                    public void onResult(GetCredentialResponse result) {
-                        handleCredential(result.getCredential(), callback);
+            credentialManager.getCredentialAsync(
+                    activity,
+                    request,
+                    null,
+                    ContextCompat.getMainExecutor(activity),
+                    new CredentialManagerCallback<GetCredentialResponse, GetCredentialException>() {
+                        @Override
+                        public void onResult(GetCredentialResponse response) {
+                            handleCredential(response.getCredential(), callback);
+                        }
+
+                        @Override
+                        public void onError(@NonNull GetCredentialException error) {
+                            if (authorizedOnly) {
+                                // First-time sign-in: allow the account chooser to show all
+                                // eligible Google accounts.
+                                requestCredential(activity, false, callback);
+                            } else {
+                                callback.onError(humanizeCredentialError(error));
+                            }
+                        }
                     }
-
-                    @Override
-                    public void onError(@NonNull GetCredentialException e) {
-                        // No previously authorized account. Retry with all Google accounts so
-                        // first-time sign-up is supported as documented by Google/Firebase.
-                        GetGoogleIdOption signupOption = new GetGoogleIdOption.Builder()
-                                .setFilterByAuthorizedAccounts(false)
-                                .setServerClientId(webClientId)
-                                .setNonce(generateNonce())
-                                .build();
-
-                        GetCredentialRequest signupRequest = new GetCredentialRequest.Builder()
-                                .addCredentialOption(signupOption)
-                                .build();
-
-                        credentialManager.getCredentialAsync(
-                                activityContext,
-                                signupRequest,
-                                null,
-                                ContextCompat.getMainExecutor(activityContext),
-                                new CredentialManagerCallback<GetCredentialResponse, GetCredentialException>() {
-                                    @Override
-                                    public void onResult(GetCredentialResponse result) {
-                                        handleCredential(result.getCredential(), callback);
-                                    }
-
-                                    @Override
-                                    public void onError(@NonNull GetCredentialException retryError) {
-                                        callback.onError(humanizeCredentialError(retryError));
-                                    }
-                                }
-                        );
-                    }
-                }
-        );
+            );
+        } catch (RuntimeException e) {
+            callback.onError("Google sign-in could not start: " + safeMessage(e));
+        }
     }
 
     private void handleCredential(Credential credential, Callback callback) {
@@ -227,86 +169,63 @@ public final class GoogleAuthManager {
                     .addOnCompleteListener(task -> {
                         if (task.isSuccessful() && auth.getCurrentUser() != null) {
                             callback.onSuccess(auth.getCurrentUser());
-                        } else {
-                            Exception error = task.getException();
-                            callback.onError(error == null
-                                    ? "Google sign-in failed."
-                                    : humanizeAuthError(error));
+                            return;
                         }
+
+                        Exception error = task.getException();
+                        callback.onError(error == null
+                                ? "Google account authentication failed."
+                                : humanizeAuthError(error));
                     });
         } catch (RuntimeException e) {
-            callback.onError("Google returned an invalid sign-in response. Please try again.");
+            callback.onError("Google returned an invalid sign-in response: " + safeMessage(e));
         }
     }
 
-    public void signOut(Context context) {
-        if (auth != null) auth.signOut();
-
-        if (credentialManager != null) {
-            credentialManager.clearCredentialStateAsync(
-                    new androidx.credentials.ClearCredentialStateRequest(),
-                    null,
-                    ContextCompat.getMainExecutor(context),
-                    new CredentialManagerCallback<Void, androidx.credentials.exceptions.ClearCredentialException>() {
-                        @Override
-                        public void onResult(Void result) {
-                        }
-
-                        @Override
-                        public void onError(@NonNull androidx.credentials.exceptions.ClearCredentialException e) {
-                        }
-                    }
-            );
+    public void signOut(Activity activity) {
+        if (auth != null) {
+            auth.signOut();
         }
+
+        if (credentialManager == null) return;
+
+        credentialManager.clearCredentialStateAsync(
+                new androidx.credentials.ClearCredentialStateRequest(),
+                null,
+                ContextCompat.getMainExecutor(activity),
+                new CredentialManagerCallback<Void, androidx.credentials.exceptions.ClearCredentialException>() {
+                    @Override public void onResult(Void result) {}
+                    @Override public void onError(@NonNull androidx.credentials.exceptions.ClearCredentialException error) {}
+                }
+        );
     }
 
     private String humanizeCredentialError(Exception error) {
-        String value = error.getMessage();
-        if (value == null || value.trim().isEmpty()) return "Google sign-in was cancelled or could not be completed.";
-        return "Google sign-in could not be completed. Please try again.";
+        String message = safeMessage(error);
+        String lower = message.toLowerCase();
+        if (lower.contains("cancel")) return "Google sign-in was cancelled.";
+        if (lower.contains("no credential") || lower.contains("not found")) {
+            return "No Google account credential was available. Please select an account and try again.";
+        }
+        return "Google sign-in could not be completed: " + message;
     }
 
     private String humanizeAuthError(Exception error) {
-        String value = error.getMessage();
-        if (value == null || value.trim().isEmpty()) return "Account authentication failed.";
-        return "Account authentication failed. Please check your Google/Firebase setup.";
-    }
-
-    private String readAsset(String name) throws Exception {
-        StringBuilder builder = new StringBuilder();
-        try (InputStream input = appContext.getAssets().open(name);
-             BufferedReader reader = new BufferedReader(new InputStreamReader(input, StandardCharsets.UTF_8))) {
-            String line;
-            while ((line = reader.readLine()) != null) builder.append(line);
+        String message = safeMessage(error);
+        if (message.contains("12500")) {
+            return "Google sign-in error 12500. Check the Firebase support email and SHA-1 certificate.";
         }
-        return builder.toString();
-    }
-
-    private String findWebClientId(JSONObject root) throws Exception {
-        JSONArray clients = root.getJSONArray("client");
-        for (int i = 0; i < clients.length(); i++) {
-            JSONObject client = clients.getJSONObject(i);
-            JSONArray oauth = client.optJSONArray("oauth_client");
-            if (oauth == null) continue;
-
-            for (int j = 0; j < oauth.length(); j++) {
-                JSONObject item = oauth.getJSONObject(j);
-                if (item.optInt("client_type", -1) == 3) {
-                    String id = item.optString("client_id", "");
-                    if (!TextUtils.isEmpty(id)) return id;
-                }
-            }
+        if (message.contains("10") || message.toLowerCase().contains("developer error")) {
+            return "Google sign-in configuration error. Check the package name and SHA-1 certificate in Firebase.";
         }
-        return "";
+        return "Firebase authentication failed: " + message;
     }
 
-    private boolean isPlaceholder(String value) {
-        if (TextUtils.isEmpty(value)) return true;
-        String lower = value.toLowerCase();
-        return lower.contains("change_me")
-                || lower.contains("replace")
-                || lower.contains("your_")
-                || lower.contains("placeholder");
+    private String safeMessage(Throwable error) {
+        String message = error == null ? null : error.getMessage();
+        return (message == null || message.trim().isEmpty())
+                ? "Please try again."
+                : message.trim();
     }
 
     private static String generateNonce() {
