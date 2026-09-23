@@ -54,6 +54,7 @@ public final class PaperCanvasView extends View {
     private int tool = TOOL_PEN;
     private int inkColor = Color.rgb(24, 35, 51);
     private float penSize = 5.5f;
+    private float stabilizer = 0.06f;
     private boolean writeMode = true;
     private boolean palmShield = true;
     private boolean marginEnabled = true;
@@ -130,6 +131,14 @@ public final class PaperCanvasView extends View {
 
     public float getPenSize() {
         return penSize;
+    }
+
+    public void setStabilizer(float value) {
+        stabilizer = clamp(value, 0f, 0.25f);
+    }
+
+    public float getStabilizer() {
+        return stabilizer;
     }
 
     public void setWriteMode(boolean enabled) {
@@ -494,7 +503,20 @@ public final class PaperCanvasView extends View {
                 float[] current = screenToPage(event.getX(index), event.getY(index));
 
                 if (tool == TOOL_PEN || tool == TOOL_HIGHLIGHTER || tool == TOOL_ERASER) {
-                    drawSegment(lastPageX, lastPageY, current[0], current[1], event.getPressure(index), event.getToolType(index));
+                    for (int h = 0; h < event.getHistorySize(index); h++) {
+                        float[] hp = screenToPage(
+                                event.getHistoricalX(index, h),
+                                event.getHistoricalY(index, h)
+                        );
+                        drawSegment(lastPageX, lastPageY, hp[0], hp[1],
+                                event.getHistoricalPressure(index, h),
+                                event.getToolType(index));
+                        lastPageX = hp[0];
+                        lastPageY = hp[1];
+                    }
+
+                    drawSegment(lastPageX, lastPageY, current[0], current[1],
+                            event.getPressure(index), event.getToolType(index));
                     lastPageX = current[0];
                     lastPageY = current[1];
                     invalidate();
@@ -527,6 +549,11 @@ public final class PaperCanvasView extends View {
                     shapeEndY = end[1];
                     commitShape();
                 } else if (tool == TOOL_PEN || tool == TOOL_HIGHLIGHTER || tool == TOOL_ERASER) {
+                    float[] end = screenToPage(event.getX(0), event.getY(0));
+                    if (Math.hypot(end[0] - lastPageX, end[1] - lastPageY) > 0.15f) {
+                        drawSegment(lastPageX, lastPageY, end[0], end[1],
+                                event.getPressure(0), event.getToolType(0));
+                    }
                     finishAction();
                 } else {
                     drawing = false;
@@ -589,27 +616,30 @@ public final class PaperCanvasView extends View {
 
     private void drawDot(float x, float y, float pressure, int toolType) {
         if (inkBitmap == null) return;
-        Paint p = configureStrokePaint(tool == TOOL_ERASER);
-        float width = getEffectiveWidth(pressure, toolType);
-        p.setStrokeWidth(width);
+        Paint p = configureStrokePaint(tool == TOOL.ERASER);
+        p.setStrokeCap(Paint.Cap.ROUND);
+        p.setStrokeWidth(getEffectiveWidth(pressure, toolType));
         Canvas c = new Canvas(inkBitmap);
         c.drawPoint(x, y, p);
-        c.drawCircle(x, y, Math.max(0.8f, width * 0.5f), p);
         p.setXfermode(null);
     }
 
     private void drawSegment(float x1, float y1, float x2, float y2, float pressure, int toolType) {
         if (inkBitmap == null) return;
-        Paint p = configureStrokePaint(tool == TOOL_ERASER);
-        float width = getEffectiveWidth(pressure, toolType);
-        p.setStrokeWidth(width);
+
+        float alpha = 1f - (stabilizer * 0.35f);
+        float targetX = x1 + (x2 - x1) * alpha;
+        float targetY = y1 + (y2 - y1) * alpha;
+
+        if (Math.hypot(targetX - x1, targetY - y1) < 0.15f) return;
+
+        Paint p = configureStrokePaint(tool == TOOL.ERASER);
+        p.setStrokeCap(Paint.Cap.ROUND);
+        p.setStrokeJoin(Paint.Join.ROUND);
+        p.setStrokeWidth(getEffectiveWidth(pressure, toolType));
 
         Canvas c = new Canvas(inkBitmap);
-        c.drawLine(x1, y1, x2, y2, p);
-        if (tool != TOOL_HIGHLIGHTER) {
-            float radius = Math.max(0.8f, width * 0.5f);
-            c.drawCircle(x2, y2, radius, p);
-        }
+        c.drawLine(x1, y1, targetX, targetY, p);
         p.setXfermode(null);
     }
 
