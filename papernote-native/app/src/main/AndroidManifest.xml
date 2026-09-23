@@ -11,6 +11,11 @@
         android:supportsRtl="true"
         android:resizeableActivity="true">
         <activity
+            android:name=".EditorActivity"
+            android:screenOrientation="unspecified"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
+        <activity
             android:name=".MainActivity"
             android:screenOrientation="unspecified"
             android:exported="true"
