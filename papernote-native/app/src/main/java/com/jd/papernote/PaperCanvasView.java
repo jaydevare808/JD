@@ -5,6 +5,7 @@ import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
+import android.graphics.PointF;
 import android.graphics.Path;
 import android.graphics.PorterDuff;
 import android.graphics.PorterDuffXfermode;
@@ -16,6 +17,7 @@ import android.view.View;
 
 import java.io.ByteArrayOutputStream;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Deque;
 
 public final class PaperCanvasView extends View {
@@ -70,6 +72,15 @@ public final class PaperCanvasView extends View {
     private float shapeEndX;
     private float shapeEndY;
     private byte[] actionSnapshot;
+
+    // Vector stroke state. Rasterize only when the stroke is committed.
+    private final Path liveStroke = new Path();
+    private float liveStartX;
+    private float liveStartY;
+    private float liveLastX;
+    private float liveLastY;
+    private boolean liveStrokeActive;
+    private boolean liveStrokeMoved;
 
     private float baseScale = 1f;
     private float zoom = 1f;
@@ -182,6 +193,7 @@ public final class PaperCanvasView extends View {
         undo.clear();
         redo.clear();
         actionSnapshot = null;
+        resetLiveStroke();
         resetViewport();
         invalidate();
     }
@@ -281,6 +293,7 @@ public final class PaperCanvasView extends View {
         panning = false;
         activePointerId = -1;
         ignoredDown = false;
+        resetLiveStroke();
         invalidate();
     }
 
@@ -348,6 +361,15 @@ public final class PaperCanvasView extends View {
 
         if (inkBitmap != null) {
             canvas.drawBitmap(inkBitmap, 0f, 0f, bitmapPaint);
+        }
+
+        if (liveStrokeActive && (tool == TOOL_PEN || tool == TOOL_HIGHLIGHTER || tool == TOOL_ERASER)) {
+            Paint livePaint = configureStrokePaint(tool == TOOL_ERASER);
+            livePaint.setStrokeCap(Paint.Cap.ROUND);
+            livePaint.setStrokeJoin(Paint.Join.ROUND);
+            livePaint.setStyle(Paint.Style.STROKE);
+            canvas.drawPath(liveStroke, livePaint);
+            if (!liveStrokeMoved) canvas.drawPoint(liveStartX, liveStartY, livePaint);
         }
 
         if (drawing && isShapeTool(tool)) {
@@ -480,7 +502,7 @@ public final class PaperCanvasView extends View {
                 lastPageY = p[1];
 
                 if (tool == TOOL_PEN || tool == TOOL_HIGHLIGHTER || tool == TOOL_ERASER) {
-                    drawDot(p[0], p[1], event.getPressure(0), event.getToolType(0));
+                    beginLiveStroke(p[0], p[1]);
                     invalidate();
                     if (soundEngine != null && tool != TOOL_ERASER) soundEngine.tick();
                 } else if (isShapeTool(tool)) {
@@ -508,17 +530,10 @@ public final class PaperCanvasView extends View {
                                 event.getHistoricalX(index, h),
                                 event.getHistoricalY(index, h)
                         );
-                        drawSegment(lastPageX, lastPageY, hp[0], hp[1],
-                                event.getHistoricalPressure(index, h),
-                                event.getToolType(index));
-                        lastPageX = hp[0];
-                        lastPageY = hp[1];
+                        appendLivePoint(hp[0], hp[1]);
                     }
 
-                    drawSegment(lastPageX, lastPageY, current[0], current[1],
-                            event.getPressure(index), event.getToolType(index));
-                    lastPageX = current[0];
-                    lastPageY = current[1];
+                    appendLivePoint(current[0], current[1]);
                     invalidate();
                     if (soundEngine != null && tool != TOOL_ERASER) soundEngine.tick();
                 } else if (isShapeTool(tool)) {
@@ -550,11 +565,8 @@ public final class PaperCanvasView extends View {
                     commitShape();
                 } else if (tool == TOOL_PEN || tool == TOOL_HIGHLIGHTER || tool == TOOL_ERASER) {
                     float[] end = screenToPage(event.getX(0), event.getY(0));
-                    if (Math.hypot(end[0] - lastPageX, end[1] - lastPageY) > 0.15f) {
-                        drawSegment(lastPageX, lastPageY, end[0], end[1],
-                                event.getPressure(0), event.getToolType(0));
-                    }
-                    finishAction();
+                    appendLivePoint(end[0], end[1]);
+                    commitLiveStroke();
                 } else {
                     drawing = false;
                     activePointerId = -1;
@@ -584,7 +596,7 @@ public final class PaperCanvasView extends View {
                         lastPageY = takeover[1];
 
                         if (tool == TOOL_PEN || tool == TOOL_HIGHLIGHTER || tool == TOOL_ERASER) {
-                            drawDot(takeover[0], takeover[1], event.getPressure(newIndex), event.getToolType(newIndex));
+                            beginLiveStroke(takeover[0], takeover[1]);
                             if (soundEngine != null && tool != TOOL_ERASER) soundEngine.tick();
                         } else if (isShapeTool(tool)) {
                             shapeStartX = takeover[0];
@@ -614,33 +626,70 @@ public final class PaperCanvasView extends View {
         return major > threshold || minor > threshold || size > 0.36f;
     }
 
-    private void drawDot(float x, float y, float pressure, int toolType) {
-        if (inkBitmap == null) return;
-        Paint p = configureStrokePaint(tool == TOOL_ERASER);
-        p.setStrokeCap(Paint.Cap.ROUND);
-        p.setStrokeWidth(getEffectiveWidth(pressure, toolType));
-        Canvas c = new Canvas(inkBitmap);
-        c.drawPoint(x, y, p);
-        p.setXfermode(null);
+    private void beginLiveStroke(float x, float y) {
+        liveStroke.reset();
+        liveStroke.moveTo(x, y);
+        liveStartX = x;
+        liveStartY = y;
+        liveLastX = x;
+        liveLastY = y;
+        liveStrokeActive = true;
+        liveStrokeMoved = false;
     }
 
-    private void drawSegment(float x1, float y1, float x2, float y2, float pressure, int toolType) {
-        if (inkBitmap == null) return;
+    private void appendLivePoint(float rawX, float rawY) {
+        if (!liveStrokeActive) beginLiveStroke(rawX, rawY);
 
-        float alpha = 1f - (stabilizer * 0.35f);
-        float targetX = x1 + (x2 - x1) * alpha;
-        float targetY = y1 + (y2 - y1) * alpha;
+        // Conservative low-latency filter for capacitive touch jitter.
+        float alpha = 1f - (stabilizer * 0.45f);
+        float x = liveLastX + (rawX - liveLastX) * alpha;
+        float y = liveLastY + (rawY - liveLastY) * alpha;
 
-        if (Math.hypot(targetX - x1, targetY - y1) < 0.15f) return;
+        if (Math.hypot(x - liveLastX, y - liveLastY) < 0.35f) return;
+
+        float midX = (liveLastX + x) * 0.5f;
+        float midY = (liveLastY + y) * 0.5f;
+
+        // Quadratic midpoint interpolation makes each new sample join the prior
+        // sample with a smooth curve instead of a visible polygon/bead.
+        liveStroke.quadTo(liveLastX, liveLastY, midX, midY);
+
+        liveLastX = x;
+        liveLastY = y;
+        liveStrokeMoved = true;
+    }
+
+    private void commitLiveStroke() {
+        if (!liveStrokeActive || inkBitmap == null) {
+            finishAction();
+            return;
+        }
+
+        if (liveStrokeMoved) {
+            liveStroke.quadTo(liveLastX, liveLastY, liveLastX, liveLastY);
+        }
 
         Paint p = configureStrokePaint(tool == TOOL_ERASER);
         p.setStrokeCap(Paint.Cap.ROUND);
         p.setStrokeJoin(Paint.Join.ROUND);
-        p.setStrokeWidth(getEffectiveWidth(pressure, toolType));
+        p.setStyle(Paint.Style.STROKE);
 
         Canvas c = new Canvas(inkBitmap);
-        c.drawLine(x1, y1, targetX, targetY, p);
+        c.drawPath(liveStroke, p);
+        if (!liveStrokeMoved) c.drawPoint(liveStartX, liveStartY, p);
         p.setXfermode(null);
+
+        finishAction();
+    }
+
+    private void resetLiveStroke() {
+        liveStroke.reset();
+        liveStrokeActive = false;
+        liveStrokeMoved = false;
+        liveStartX = 0f;
+        liveStartY = 0f;
+        liveLastX = 0f;
+        liveLastY = 0f;
     }
 
     private float getEffectiveWidth(float pressure, int toolType) {
