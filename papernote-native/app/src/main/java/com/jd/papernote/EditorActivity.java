@@ -51,6 +51,7 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
     private NotebookStore store;
     private SoundEngine soundEngine;
     private ExecutorService saveExecutor;
+    private ExecutorService exportExecutor;
     private final Handler saveHandler = new Handler(Looper.getMainLooper());
     private Runnable pendingSave;
 
@@ -64,6 +65,8 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
     private Button palmButton;
     private Button soundButton;
     private int pendingExport = 0;
+    private ExportManager.Format pendingExportFormat;
+    private static final int REQUEST_STORAGE_PERMISSION = 505;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -72,6 +75,7 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
         store = new NotebookStore(this);
         soundEngine = new SoundEngine(this);
         saveExecutor = Executors.newSingleThreadExecutor();
+        exportExecutor = Executors.newSingleThreadExecutor();
 
         Window window = getWindow();
         window.setStatusBarColor(Color.rgb(23, 32, 51));
@@ -99,6 +103,7 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
         saveHandler.removeCallbacksAndMessages(null);
         saveCurrentPageNow();
         if (saveExecutor != null) saveExecutor.shutdown();
+        if (exportExecutor != null) exportExecutor.shutdown();
         if (soundEngine != null) soundEngine.close();
         super.onDestroy();
     }
@@ -283,46 +288,53 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
     private void buildEditor() {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(Color.rgb(222, 226, 232));
+        root.setBackgroundColor(0xFFE9EDF3);
 
         LinearLayout header = new LinearLayout(this);
         header.setGravity(Gravity.CENTER_VERTICAL);
-        header.setPadding(dp(10), dp(6), dp(10), dp(6));
-        header.setBackgroundColor(Color.rgb(23, 32, 51));
+        header.setPadding(dp(8), dp(7), dp(8), dp(7));
+        header.setBackgroundColor(0xFF182339);
+        header.setElevation(dp(4));
 
-        Button back = toolbarButton("←");
+        Button back = toolbarButton("‹");
+        back.setTextSize(22);
         back.setOnClickListener(v -> onBackPressed());
         header.addView(back, new LinearLayout.LayoutParams(dp(48), dp(44)));
 
         LinearLayout titleBox = new LinearLayout(this);
         titleBox.setOrientation(LinearLayout.VERTICAL);
         titleLabel = text(currentNotebook.title, 17, Color.WHITE, true);
-        TextView subject = text(currentNotebook.subject, 12, 0xFFC8D0DD, false);
+        TextView subject = text(currentNotebook.subject, 12, 0xFFC9D2E1, false);
         titleBox.addView(titleLabel);
         titleBox.addView(subject);
-        LinearLayout.LayoutParams tb = new LinearLayout.LayoutParams(0, -2, 1f);
-        tb.setMargins(dp(8), 0, 0, 0);
-        header.addView(titleBox, tb);
 
-        saveLabel = text("Ready", 12, 0xFFC8D0DD, false);
+        LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(0, -2, 1f);
+        titleParams.setMargins(dp(10), 0, dp(6), 0);
+        header.addView(titleBox, titleParams);
+
+        saveLabel = text("Saved", 11, 0xFFD4DBE7, true);
         saveLabel.setGravity(Gravity.CENTER);
-        header.addView(saveLabel, new LinearLayout.LayoutParams(dp(72), -1));
+        saveLabel.setBackground(rounded(0xFF26334D, 18));
+        header.addView(saveLabel, new LinearLayout.LayoutParams(dp(68), dp(34)));
 
         Button more = toolbarButton("⋮");
+        more.setTextSize(22);
         more.setOnClickListener(v -> showMoreMenu(more));
         header.addView(more, new LinearLayout.LayoutParams(dp(48), dp(44)));
         root.addView(header);
 
-        HorizontalScrollView toolsScroll = new HorizontalScrollView(this);
-        toolsScroll.setHorizontalScrollBarEnabled(false);
+        TextView pageHint = text("WRITE MODE  •  Use the controls below for pen, marker, eraser and study tools.", 11, 0xFF5C6678, true);
+        pageHint.setPadding(dp(14), dp(7), dp(14), dp(5));
+        root.addView(pageHint);
+
+        HorizontalScrollView toolScroll = new HorizontalScrollView(this);
+        toolScroll.setHorizontalScrollBarEnabled(false);
         LinearLayout tools = new LinearLayout(this);
-        tools.setPadding(dp(8), dp(7), dp(8), dp(7));
-        tools.setGravity(Gravity.CENTER_VERTICAL);
+        tools.setPadding(dp(9), dp(4), dp(9), dp(7));
 
         writeModeButton = toolbarButton("WRITE");
         writeModeButton.setOnClickListener(v -> {
-            boolean newMode = !canvasView.isWriteMode();
-            canvasView.setWriteMode(newMode);
+            canvasView.setWriteMode(!canvasView.isWriteMode());
             updateWriteModeButton();
         });
         tools.addView(writeModeButton);
@@ -331,7 +343,7 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
         pen.setOnClickListener(v -> canvasView.setTool(PaperCanvasView.TOOL_PEN));
         tools.addView(pen);
 
-        Button marker = toolbarButton("MARK");
+        Button marker = toolbarButton("MARKER");
         marker.setOnClickListener(v -> canvasView.setTool(PaperCanvasView.TOOL_HIGHLIGHTER));
         tools.addView(marker);
 
@@ -351,9 +363,13 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
         oval.setOnClickListener(v -> canvasView.setTool(PaperCanvasView.TOOL_OVAL));
         tools.addView(oval);
 
-        Button text = toolbarButton("TEXT");
-        text.setOnClickListener(v -> canvasView.setTool(PaperCanvasView.TOOL_TEXT));
-        tools.addView(text);
+        Button addText = toolbarButton("TEXT");
+        addText.setOnClickListener(v -> canvasView.setTool(PaperCanvasView.TOOL_TEXT));
+        tools.addView(addText);
+
+        Button image = toolbarButton("IMAGE");
+        image.setOnClickListener(v -> chooseImage());
+        tools.addView(image);
 
         Button undo = toolbarButton("UNDO");
         undo.setOnClickListener(v -> canvasView.undo());
@@ -363,27 +379,21 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
         redo.setOnClickListener(v -> canvasView.redo());
         tools.addView(redo);
 
-        Button image = toolbarButton("IMAGE");
-        image.setOnClickListener(v -> chooseImage());
-        tools.addView(image);
-
         Button study = toolbarButton("STUDY");
         study.setOnClickListener(v -> showStudyTools(study));
         tools.addView(study);
 
-        toolsScroll.addView(tools);
-        root.addView(toolsScroll);
+        toolScroll.addView(tools);
+        root.addView(toolScroll);
 
-        HorizontalScrollView controlScroll = new HorizontalScrollView(this);
-        controlScroll.setHorizontalScrollBarEnabled(false);
+        LinearLayout quickBar = new LinearLayout(this);
+        quickBar.setGravity(Gravity.CENTER_VERTICAL);
+        quickBar.setPadding(dp(10), dp(4), dp(10), dp(6));
+        quickBar.setBackgroundColor(Color.WHITE);
+        quickBar.setElevation(dp(2));
 
-        LinearLayout controlBar = new LinearLayout(this);
-        controlBar.setGravity(Gravity.CENTER_VERTICAL);
-        controlBar.setPadding(dp(10), dp(5), dp(10), dp(5));
-        controlBar.setBackgroundColor(Color.WHITE);
-
-        TextView sizeLabel = text("Size", 12, 0xFF596273, true);
-        controlBar.addView(sizeLabel);
+        TextView sizeLabel = text("Pen", 11, 0xFF596273, true);
+        quickBar.addView(sizeLabel);
 
         SeekBar size = new SeekBar(this);
         size.setMax(45);
@@ -395,12 +405,12 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
             @Override public void onStartTrackingTouch(SeekBar seekBar) {}
             @Override public void onStopTrackingTouch(SeekBar seekBar) {}
         });
-        controlBar.addView(size, new LinearLayout.LayoutParams(dp(170), dp(42)));
+        quickBar.addView(size, new LinearLayout.LayoutParams(dp(145), dp(42)));
 
-        TextView smoothLabel = text("Smooth", 12, 0xFF596273, true);
-        LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(-2, dp(42));
-        slp.setMargins(dp(12), 0, 0, 0);
-        controlBar.addView(smoothLabel, slp);
+        TextView smoothLabel = text("Smooth", 11, 0xFF596273, true);
+        LinearLayout.LayoutParams smoothLabelParams = new LinearLayout.LayoutParams(-2, dp(42));
+        smoothLabelParams.setMargins(dp(8), 0, 0, 0);
+        quickBar.addView(smoothLabel, smoothLabelParams);
 
         SeekBar smooth = new SeekBar(this);
         smooth.setMax(25);
@@ -412,18 +422,18 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
             @Override public void onStartTrackingTouch(SeekBar seekBar) {}
             @Override public void onStopTrackingTouch(SeekBar seekBar) {}
         });
-        controlBar.addView(smooth, new LinearLayout.LayoutParams(dp(145), dp(42)));
+        quickBar.addView(smooth, new LinearLayout.LayoutParams(dp(115), dp(42)));
 
         Button color = toolbarButton("INK");
         color.setOnClickListener(v -> showColorDialog());
-        controlBar.addView(color);
+        quickBar.addView(color);
 
         palmButton = toolbarButton("PALM");
         palmButton.setOnClickListener(v -> {
             canvasView.setPalmShield(!canvasView.isPalmShield());
             updatePalmButton();
         });
-        controlBar.addView(palmButton);
+        quickBar.addView(palmButton);
 
         soundButton = toolbarButton("SOUND");
         soundButton.setOnClickListener(v -> {
@@ -431,12 +441,12 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
             soundEngine.setEnabled(enabled);
             updateSoundButton();
         });
-        controlBar.addView(soundButton);
+        quickBar.addView(soundButton);
 
-        controlScroll.addView(controlBar);
-        root.addView(controlScroll, new LinearLayout.LayoutParams(-1, dp(54)));
+        root.addView(quickBar);
 
         FrameLayout canvasFrame = new FrameLayout(this);
+        canvasFrame.setPadding(dp(8), dp(7), dp(8), dp(7));
         canvasView = new PaperCanvasView(this);
         canvasView.setListener(this);
         canvasView.setSoundEngine(soundEngine);
@@ -445,20 +455,30 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
 
         LinearLayout bottom = new LinearLayout(this);
         bottom.setGravity(Gravity.CENTER_VERTICAL);
-        bottom.setPadding(dp(7), dp(6), dp(7), dp(6));
+        bottom.setPadding(dp(7), dp(5), dp(7), dp(5));
         bottom.setBackgroundColor(Color.WHITE);
+        bottom.setElevation(dp(8));
 
         Button prev = toolbarButton("‹");
+        prev.setTextSize(22);
         prev.setOnClickListener(v -> movePage(-1));
-        bottom.addView(prev, new LinearLayout.LayoutParams(dp(48), dp(44)));
+        bottom.addView(prev, new LinearLayout.LayoutParams(dp(46), dp(44)));
 
-        pageLabel = text("Page 1 / 1", 13, Color.rgb(23, 32, 51), true);
+        LinearLayout pageBox = new LinearLayout(this);
+        pageBox.setOrientation(LinearLayout.VERTICAL);
+        pageBox.setGravity(Gravity.CENTER);
+        pageLabel = text("Page 1 / 1", 13, 0xFF182339, true);
         pageLabel.setGravity(Gravity.CENTER);
-        bottom.addView(pageLabel, new LinearLayout.LayoutParams(0, dp(44), 1f));
+        TextView autoSave = text("AUTO-SAVE ON", 9, 0xFF7A8495, true);
+        autoSave.setGravity(Gravity.CENTER);
+        pageBox.addView(pageLabel);
+        pageBox.addView(autoSave);
+        bottom.addView(pageBox, new LinearLayout.LayoutParams(0, dp(44), 1f));
 
         Button next = toolbarButton("›");
+        next.setTextSize(22);
         next.setOnClickListener(v -> movePage(1));
-        bottom.addView(next, new LinearLayout.LayoutParams(dp(48), dp(44)));
+        bottom.addView(next, new LinearLayout.LayoutParams(dp(46), dp(44)));
 
         Button add = toolbarButton("+ PAGE");
         add.setOnClickListener(v -> addPage());
@@ -468,13 +488,9 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
         paper.setOnClickListener(v -> showPaperDialog());
         bottom.addView(paper);
 
-        Button pdf = toolbarButton("PDF");
-        pdf.setOnClickListener(v -> requestExport(EXPORT_PDF));
-        bottom.addView(pdf);
-
-        Button save = toolbarButton("PNG");
-        save.setOnClickListener(v -> requestExport(EXPORT_PNG));
-        bottom.addView(save);
+        Button export = toolbarButton("EXPORT");
+        export.setOnClickListener(v -> showExportDialog());
+        bottom.addView(export);
 
         root.addView(bottom);
 
@@ -483,6 +499,17 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
         updateWriteModeButton();
         updatePalmButton();
         updateSoundButton();
+
+        // Subtle editor entrance: content arrives without covering the canvas with a modal animation.
+        header.setAlpha(0f);
+        header.animate().alpha(1f).setDuration(260).start();
+        canvasFrame.setAlpha(0f);
+        canvasFrame.setTranslationY(dp(16));
+        canvasFrame.animate().alpha(1f).translationY(0f)
+                .setDuration(360)
+                .setStartDelay(80)
+                .setInterpolator(new android.view.animation.DecelerateInterpolator())
+                .start();
     }
 
     private void loadCurrentPage() {
@@ -970,7 +997,7 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
                             .show();
                     return true;
                 case "Backup notebook":
-                    requestExport(EXPORT_BACKUP);
+                    chooseBackupDestination();
                     return true;
                 case "Restore backup":
                     chooseRestoreFile();
@@ -1117,26 +1144,107 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
         startActivityForResult(intent, REQUEST_RESTORE);
     }
 
-    private void requestExport(int type) {
+    private void chooseBackupDestination() {
         saveCurrentPageNow();
-        pendingExport = type;
-        String name;
-        String mime;
-        if (type == EXPORT_PDF) {
-            name = safeFileName(currentNotebook.title) + ".pdf";
-            mime = "application/pdf";
-        } else if (type == EXPORT_PNG) {
-            name = safeFileName(currentNotebook.pages.get(currentPageIndex).title) + ".png";
-            mime = "image/png";
-        } else {
-            name = safeFileName(currentNotebook.title) + ".papernote";
-            mime = "application/json";
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.setType("application/json");
+        intent.putExtra(Intent.EXTRA_TITLE, safeFileName(currentNotebook.title) + ".papernote");
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        startActivityForResult(intent, REQUEST_BACKUP);
+    }
+
+    private void showExportDialog() {
+        saveCurrentPageNow();
+
+        String[] labels = {
+                "PDF  •  one document with all pages",
+                "PNG  •  separate image for every page",
+                "JPG  •  separate image for every page",
+                "WebP  •  separate image for every page",
+                "ZIP  •  all pages as PNG images"
+        };
+
+        ExportManager.Format[] formats = {
+                ExportManager.Format.PDF,
+                ExportManager.Format.PNG,
+                ExportManager.Format.JPG,
+                ExportManager.Format.WEBP,
+                ExportManager.Format.ZIP
+        };
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("Export notebook")
+                .setItems(labels, null)
+                .setNegativeButton("Cancel", null)
+                .create();
+
+        dialog.setOnShowListener(d -> dialog.getListView().setOnItemClickListener((parent, view, position, id) -> {
+            dialog.dismiss();
+            beginExport(formats[position]);
+        }));
+
+        dialog.show();
+    }
+
+    private void beginExport(ExportManager.Format format) {
+        if (currentNotebook == null) return;
+
+        if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P
+                && checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            pendingExportFormat = format;
+            requestPermissions(
+                    new String[]{android.Manifest.permission.WRITE_EXTERNAL_STORAGE},
+                    REQUEST_STORAGE_PERMISSION
+            );
+            return;
         }
 
-        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
-        intent.setType(mime);
-        intent.putExtra(Intent.EXTRA_TITLE, name);
-        startActivityForResult(intent, type == EXPORT_BACKUP ? REQUEST_BACKUP : REQUEST_EXPORT);
+        saveCurrentPageNow();
+        if (saveLabel != null) saveLabel.setText("Exporting…");
+
+        exportExecutor.submit(() -> ExportManager.export(
+                this,
+                store,
+                currentNotebook,
+                format,
+                new ExportManager.Callback() {
+                    @Override public void onComplete(String message) {
+                        runOnUiThread(() -> {
+                            if (saveLabel != null) saveLabel.setText("Saved");
+                            toast(message);
+                        });
+                    }
+
+                    @Override public void onError(String message) {
+                        runOnUiThread(() -> {
+                            if (saveLabel != null) saveLabel.setText("Export error");
+                            new AlertDialog.Builder(EditorActivity.this)
+                                    .setTitle("Export failed")
+                                    .setMessage(message)
+                                    .setPositiveButton("OK", null)
+                                    .show();
+                        });
+                    }
+                }
+        ));
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode != REQUEST_STORAGE_PERMISSION) return;
+
+        if (grantResults.length > 0
+                && grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED
+                && pendingExportFormat != null) {
+            ExportManager.Format format = pendingExportFormat;
+            pendingExportFormat = null;
+            beginExport(format);
+        } else {
+            pendingExportFormat = null;
+            toast("Storage permission is required to save exports on this Android version.");
+        }
     }
 
     @Override
@@ -1149,7 +1257,8 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
             if (requestCode == REQUEST_IMAGE) {
                 try (InputStream in = getContentResolver().openInputStream(uri)) {
                     Bitmap decoded = android.graphics.BitmapFactory.decodeStream(in);
-                    if (decoded == null) throw new Exception();
+                    if (decoded == null) throw new Exception("Could not decode the image.");
+
                     int max = 1800;
                     float scale = Math.min(1f, max / (float) Math.max(decoded.getWidth(), decoded.getHeight()));
                     if (scale < 1f) {
@@ -1162,31 +1271,22 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
                         decoded.recycle();
                         decoded = scaled;
                     }
+
                     canvasView.addImage(decoded);
                     decoded.recycle();
                 }
                 return;
             }
 
-            if (requestCode == REQUEST_EXPORT) {
-                if (pendingExport == EXPORT_PDF) {
-                    exportPdf(uri);
-                } else if (pendingExport == EXPORT_PNG) {
-                    saveCurrentPageNow();
-                    Bitmap page = canvasView.renderPageBitmap();
-                    try (OutputStream out = getContentResolver().openOutputStream(uri)) {
-                        page.compress(Bitmap.CompressFormat.PNG, 100, out);
-                    }
-                    page.recycle();
-                    toast("PNG exported");
-                }
-                return;
-            }
-
             if (requestCode == REQUEST_BACKUP) {
                 saveCurrentPageNow();
-                String backup = store.exportBackup(currentNotebook, PaperCanvasView.PAGE_WIDTH, PaperCanvasView.PAGE_HEIGHT);
+                String backup = store.exportBackup(
+                        currentNotebook,
+                        PaperCanvasView.PAGE_WIDTH,
+                        PaperCanvasView.PAGE_HEIGHT
+                );
                 try (OutputStream out = getContentResolver().openOutputStream(uri)) {
+                    if (out == null) throw new Exception("Could not open backup file.");
                     out.write(backup.getBytes(StandardCharsets.UTF_8));
                 }
                 toast("Backup exported");
@@ -1197,9 +1297,11 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
                 StringBuilder builder = new StringBuilder();
                 try (InputStream in = getContentResolver().openInputStream(uri);
                      BufferedReader reader = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8))) {
+                    if (in == null) throw new Exception("Could not open restore file.");
                     String line;
                     while ((line = reader.readLine()) != null) builder.append(line);
                 }
+
                 NotebookStore.NotebookMeta restored = store.importBackup(builder.toString());
                 toast("Backup restored");
                 currentNotebook = restored;
@@ -1207,34 +1309,11 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
                 buildEditor();
             }
         } catch (Exception e) {
-            toast("Operation failed");
-        }
-    }
-
-    private void exportPdf(Uri uri) throws Exception {
-        saveCurrentPageNow();
-
-        android.graphics.pdf.PdfDocument document = new android.graphics.pdf.PdfDocument();
-        try {
-            for (int i = 0; i < currentNotebook.pages.size(); i++) {
-                NotebookStore.PageMeta pageMeta = currentNotebook.pages.get(i);
-                Bitmap ink = store.loadPageBitmap(pageMeta.id, PaperCanvasView.PAGE_WIDTH, PaperCanvasView.PAGE_HEIGHT);
-                Bitmap rendered = PaperCanvasView.renderPage(ink, pageMeta.paperType, true);
-                android.graphics.pdf.PdfDocument.PageInfo info =
-                        new android.graphics.pdf.PdfDocument.PageInfo.Builder(595, 842, i + 1).create();
-                android.graphics.pdf.PdfDocument.Page page = document.startPage(info);
-                page.getCanvas().drawBitmap(rendered, null, new android.graphics.Rect(0, 0, 595, 842), null);
-                document.finishPage(page);
-                ink.recycle();
-                rendered.recycle();
-            }
-
-            try (OutputStream out = getContentResolver().openOutputStream(uri)) {
-                document.writeTo(out);
-            }
-            toast("PDF exported");
-        } finally {
-            document.close();
+            new AlertDialog.Builder(this)
+                    .setTitle("Operation failed")
+                    .setMessage(e.getMessage() == null ? "Please try again." : e.getMessage())
+                    .setPositiveButton("OK", null)
+                    .show();
         }
     }
 
@@ -1278,6 +1357,7 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
         b.setPadding(dp(8), 0, dp(8), 0);
         b.setTextColor(Color.rgb(23, 32, 51));
         b.setBackground(rounded(Color.WHITE, 12));
+        b.setElevation(dp(1.5f));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, dp(40));
         lp.setMargins(dp(3), 0, dp(3), 0);
         b.setLayoutParams(lp);
