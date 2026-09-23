@@ -7,11 +7,9 @@ import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
-import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.provider.Settings;
 import android.text.InputType;
 import android.view.Gravity;
 import android.view.View;
@@ -86,7 +84,6 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
 
         // PaperNote is fully offline-first. No account or sign-in is required.
         showHome();
-        // Stable build: updates are checked manually from the overflow menu.
     }
 
     @Override
@@ -140,7 +137,7 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
         about.setBackground(rounded(0xFF2A3854, 14));
         about.setOnClickListener(v -> new AlertDialog.Builder(this)
                 .setTitle("About PaperNote")
-                .setMessage("PaperNote is a handwriting-first study notebook.\n\nNo account, Google sign-in, or cloud account is required. Your notebooks stay on this device unless you export a backup.")
+                .setMessage("PaperNote is a handwriting-first study notebook.\n\nNo account or cloud account is required. PaperNote stores your notebooks locally on this device. Use Backup or Export to make a copy.")
                 .setPositiveButton("OK", null)
                 .show());
         headerRow.addView(about);
@@ -992,7 +989,6 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
         menu.getMenu().add("Backup notebook");
         menu.getMenu().add("Restore backup");
         menu.getMenu().add("About passive stylus");
-        menu.getMenu().add("Check for update");
         menu.getMenu().add("Delete notebook");
         menu.setOnMenuItemClickListener(item -> {
             String title = item.getTitle().toString();
@@ -1033,9 +1029,6 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
                             )
                             .setPositiveButton("OK", null)
                             .show();
-                    return true;
-                case "Check for update":
-                    UpdateManager.check(this, true);
                     return true;
                 case "Delete notebook":
                     confirmDeleteNotebook();
