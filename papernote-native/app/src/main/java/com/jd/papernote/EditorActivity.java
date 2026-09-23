@@ -971,7 +971,6 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
         menu.getMenu().add("Backup notebook");
         menu.getMenu().add("Restore backup");
         menu.getMenu().add("About passive stylus");
-        menu.getMenu().add("Check for update");
         menu.getMenu().add("Delete notebook");
         menu.setOnMenuItemClickListener(item -> {
             String title = item.getTitle().toString();
@@ -1012,9 +1011,6 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
                             )
                             .setPositiveButton("OK", null)
                             .show();
-                    return true;
-                case "Check for update":
-                    UpdateManager.check(this, true);
                     return true;
                 case "Delete notebook":
                     confirmDeleteNotebook();
