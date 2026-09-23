@@ -41,7 +41,7 @@ jobs:
       - name: Build signed release and lint
         working-directory: papernote-native
         run: |
-          gradle --no-daemon :app:assembleRelease :app:lintRelease
+          gradle --no-daemon :app:assembleRelease :app:bundleRelease :app:lintRelease
 
       - name: Verify release APK
         working-directory: papernote-native
@@ -50,6 +50,7 @@ jobs:
           mkdir -p artifacts
           cp app/build/outputs/apk/release/app-release.apk artifacts/PaperNote-stable.apk
           cp app/build/outputs/apk/release/app-release.apk artifacts/PaperNote-release.apk
+          cp app/build/outputs/bundle/release/app-release.aab artifacts/PaperNote-release.aab
           zip -r artifacts/PaperNote-source.zip . -x '.gradle/*' 'app/build/*'
 
       - name: Upload build artifact
@@ -59,6 +60,7 @@ jobs:
           path: |
             papernote-native/artifacts/PaperNote-stable.apk
             papernote-native/artifacts/PaperNote-release.apk
+            papernote-native/artifacts/PaperNote-release.aab
             papernote-native/artifacts/PaperNote-source.zip
             papernote-native/app/build/reports/lint-results-release.html
           if-no-files-found: error
