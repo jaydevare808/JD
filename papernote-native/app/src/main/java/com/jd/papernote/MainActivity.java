@@ -91,7 +91,7 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
         } else {
             showWelcome();
         }
-        UpdateManager.check(this, false);
+        // Stable build: updates are checked manually from the overflow menu.
     }
 
     @Override
@@ -124,7 +124,7 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
         root.setGravity(Gravity.CENTER_HORIZONTAL);
         root.setPadding(dp(26), dp(30), dp(26), dp(24));
 
-        TextView topBadge = text("PAPERNOTE 1.7  •  STUDY EDITION", 10, 0xFF5D6B86, true);
+        TextView topBadge = text("PAPERNOTE " + BuildConfig.VERSION_NAME + "  •  STABLE BUILD", 10, 0xFF5D6B86, true);
         topBadge.setGravity(Gravity.CENTER);
         topBadge.setBackground(rounded(0xFFE9EEFF, 22));
         LinearLayout.LayoutParams badgeParams = new LinearLayout.LayoutParams(-1, dp(34));
