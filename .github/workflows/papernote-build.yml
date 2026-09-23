@@ -1,0 +1,55 @@
+name: Build PaperNote APK
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main, papernote-native]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platforms;android-36 build-tools;36.0.0'
+
+      - name: Setup Gradle 9.6
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '9.6.0'
+
+      - name: Build and lint
+        working-directory: papernote-native
+        run: |
+          gradle --no-daemon :app:assembleDebug :app:lintDebug
+
+      - name: Verify APK exists
+        working-directory: papernote-native
+        run: |
+          test -f app/build/outputs/apk/debug/app-debug.apk
+          mkdir -p artifacts
+          cp app/build/outputs/apk/debug/app-debug.apk artifacts/PaperNote-debug.apk
+          zip -r artifacts/PaperNote-source.zip . -x '.gradle/*' 'app/build/*'
+
+      - name: Upload APK and source
+        uses: actions/upload-artifact@v4
+        with:
+          name: PaperNote-build
+          path: |
+            papernote-native/artifacts/PaperNote-debug.apk
+            papernote-native/artifacts/PaperNote-source.zip
+            papernote-native/app/build/reports/lint-results-debug.html
+          if-no-files-found: error
