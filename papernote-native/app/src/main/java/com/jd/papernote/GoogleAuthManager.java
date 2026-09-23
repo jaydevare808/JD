@@ -15,6 +15,7 @@ import androidx.credentials.GetCredentialResponse;
 import androidx.credentials.exceptions.GetCredentialException;
 
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption;
+import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption;
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential;
 import com.google.firebase.FirebaseApp;
 import com.google.firebase.auth.AuthCredential;
@@ -102,15 +103,53 @@ public final class GoogleAuthManager {
                     : configurationMessage);
             return;
         }
-        requestCredential(activity, true, callback);
+        requestExplicitGoogleSignIn(activity, callback);
     }
 
-    private void requestCredential(Activity activity, boolean authorizedOnly, Callback callback) {
+    private void requestExplicitGoogleSignIn(Activity activity, Callback callback) {
+        try {
+            GetSignInWithGoogleOption option =
+                    new GetSignInWithGoogleOption.Builder(webClientId)
+                            .setNonce(generateNonce())
+                            .build();
+
+            GetCredentialRequest request = new GetCredentialRequest.Builder()
+                    .addCredentialOption(option)
+                    .build();
+
+            credentialManager.getCredentialAsync(
+                    activity,
+                    request,
+                    null,
+                    ContextCompat.getMainExecutor(activity),
+                    new CredentialManagerCallback<GetCredentialResponse, GetCredentialException>() {
+                        @Override
+                        public void onResult(GetCredentialResponse response) {
+                            handleCredential(response.getCredential(), callback);
+                        }
+
+                        @Override
+                        public void onError(@NonNull GetCredentialException error) {
+                            // Fallback for devices where the explicit SiWG provider
+                            // is unavailable but a normal Google ID credential exists.
+                            requestGoogleIdCredential(activity, true, callback, error);
+                        }
+                    }
+            );
+        } catch (RuntimeException e) {
+            requestGoogleIdCredential(activity, true, callback, e);
+        }
+    }
+
+    private void requestGoogleIdCredential(Activity activity,
+                                           boolean authorizedOnly,
+                                           Callback callback,
+                                           Exception previousError) {
         try {
             GetGoogleIdOption option = new GetGoogleIdOption.Builder()
                     .setFilterByAuthorizedAccounts(authorizedOnly)
                     .setServerClientId(webClientId)
-                    .setAutoSelectEnabled(!authorizedOnly)
+                    .setAutoSelectEnabled(false)
                     .setNonce(generateNonce())
                     .build();
 
@@ -132,17 +171,23 @@ public final class GoogleAuthManager {
                         @Override
                         public void onError(@NonNull GetCredentialException error) {
                             if (authorizedOnly) {
-                                // First-time sign-in: allow the account chooser to show all
-                                // eligible Google accounts.
-                                requestCredential(activity, false, callback);
+                                requestGoogleIdCredential(activity, false, callback, error);
                             } else {
-                                callback.onError(humanizeCredentialError(error));
+                                String message = humanizeCredentialError(previousError);
+                                if (message == null || message.trim().isEmpty()) {
+                                    message = humanizeCredentialError(error);
+                                }
+                                callback.onError(message);
                             }
                         }
                     }
             );
         } catch (RuntimeException e) {
-            callback.onError("Google sign-in could not start: " + safeMessage(e));
+            if (authorizedOnly) {
+                requestGoogleIdCredential(activity, false, callback, e);
+            } else {
+                callback.onError(humanizeCredentialError(previousError != null ? previousError : e));
+            }
         }
     }
 
