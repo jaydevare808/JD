@@ -1,28 +1,47 @@
 {
   "project_info": {
-    "project_number": "CHANGE_ME",
-    "project_id": "CHANGE_ME",
-    "storage_bucket": "CHANGE_ME"
+    "project_number": "625312393192",
+    "project_id": "papernote-aaa80",
+    "storage_bucket": "papernote-aaa80.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "CHANGE_ME",
+        "mobilesdk_app_id": "1:625312393192:android:6169b15d04eaa6a2eb265d",
         "android_client_info": {
           "package_name": "com.jd.papernote"
         }
       },
-      "api_key": [
-        {
-          "current_key": "CHANGE_ME"
-        }
-      ],
       "oauth_client": [
         {
-          "client_id": "CHANGE_ME_WEB_CLIENT_ID",
+          "client_id": "625312393192-jmi5ncloml6togrjot28jvnohp2arnbq.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.jd.papernote",
+            "certificate_hash": "d9c93302e3d42f78c9798bd8b5ae9882f541332a"
+          }
+        },
+        {
+          "client_id": "625312393192-qems9msrtkjr5bu31mf9qc7augkl3jvq.apps.googleusercontent.com",
           "client_type": 3
         }
-      ]
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB6qt6Mr2ky42ZEXKqtvGrcDcDcSGlfsU67c"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "625312393192-qems9msrtkjr5bu31mf9qc7augkl3jvq.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
     }
-  ]
+  ],
+  "configuration_version": "1"
 }
