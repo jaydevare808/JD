@@ -233,8 +233,8 @@ public final class GoogleAuthManager {
                                     : humanizeAuthError(error));
                         }
                     });
-        } catch (GoogleIdTokenParsingException e) {
-            callback.onError("Google returned an invalid sign-in token. Please try again.");
+        } catch (RuntimeException e) {
+            callback.onError("Google returned an invalid sign-in response. Please try again.");
         }
     }
 
