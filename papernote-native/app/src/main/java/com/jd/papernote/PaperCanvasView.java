@@ -5,8 +5,8 @@ import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
-import android.graphics.PointF;
 import android.graphics.Path;
+import android.graphics.PointF;
 import android.graphics.PorterDuff;
 import android.graphics.PorterDuffXfermode;
 import android.graphics.RectF;
@@ -15,7 +15,6 @@ import android.view.MotionEvent;
 import android.view.ScaleGestureDetector;
 import android.view.View;
 
-import java.io.ByteArrayOutputStream;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
@@ -43,20 +42,21 @@ public final class PaperCanvasView extends View {
         void onRequestText(float pageX, float pageY);
     }
 
-    private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+    private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.DITHER_FLAG);
     private final Paint bitmapPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
     private final RectF pageRect = new RectF();
-    private final Deque<byte[]> undo = new ArrayDeque<>();
-    private final Deque<byte[]> redo = new ArrayDeque<>();
+    private final Deque<EditCommand> undo = new ArrayDeque<>();
+    private final Deque<EditCommand> redo = new ArrayDeque<>();
 
     private Bitmap inkBitmap;
+    private Bitmap baseBitmap;
     private Listener listener;
     private SoundEngine soundEngine;
 
     private int tool = TOOL_PEN;
     private int inkColor = Color.rgb(24, 35, 51);
-    private float penSize = 5.5f;
-    private float stabilizer = 0.06f;
+    private float penSize = 4.6f;
+    private float stabilizer = 0.0f;
     private boolean writeMode = true;
     private boolean palmShield = true;
     private boolean marginEnabled = true;
@@ -65,27 +65,27 @@ public final class PaperCanvasView extends View {
     private int activePointerId = -1;
     private boolean drawing;
     private boolean ignoredDown;
-    private float lastPageX;
-    private float lastPageY;
+
     private float shapeStartX;
     private float shapeStartY;
     private float shapeEndX;
     private float shapeEndY;
-    private byte[] actionSnapshot;
 
-    // Vector stroke state. Rasterize only when the stroke is committed.
     private final Path liveStroke = new Path();
-    private float liveStartX;
-    private float liveStartY;
+    private final ArrayList<PointF> livePoints = new ArrayList<>(256);
     private float liveLastX;
     private float liveLastY;
+    private float liveCurveEndX;
+    private float liveCurveEndY;
     private boolean liveStrokeActive;
     private boolean liveStrokeMoved;
 
+    private final float[] pagePoint = new float[2];
+
     private float baseScale = 1f;
     private float zoom = 1f;
-    private float panX = 0f;
-    private float panY = 0f;
+    private float panX;
+    private float panY;
     private float panLastX;
     private float panLastY;
     private boolean panning;
@@ -94,23 +94,32 @@ public final class PaperCanvasView extends View {
 
     public PaperCanvasView(Context context) {
         super(context);
-        setLayerType(View.LAYER_TYPE_SOFTWARE, null);
+
+        // Keep the View hardware accelerated. The old implementation forced a software
+        // layer, which made live handwriting feel slow on tablets. Commands are rasterized
+        // to the backing Bitmap only when a stroke is committed.
+        setLayerType(View.LAYER_TYPE_NONE, null);
         setBackgroundColor(Color.rgb(223, 226, 231));
-        paint.setStrokeCap(Paint.Cap.ROUND);
-        paint.setStrokeJoin(Paint.Join.ROUND);
-        scaleDetector = new ScaleGestureDetector(context, new ScaleGestureDetector.SimpleOnScaleGestureListener() {
-            @Override
-            public boolean onScale(ScaleGestureDetector detector) {
-                if (!writeMode) {
-                    float oldZoom = zoom;
-                    zoom = Math.max(1f, Math.min(3.0f, zoom * detector.getScaleFactor()));
-                    if (Math.abs(zoom - oldZoom) > 0.001f) invalidate();
-                }
-                return true;
-            }
-        });
         setFocusable(true);
         setClickable(true);
+
+        paint.setAntiAlias(true);
+        paint.setStrokeCap(Paint.Cap.ROUND);
+        paint.setStrokeJoin(Paint.Join.ROUND);
+
+        scaleDetector = new ScaleGestureDetector(
+                context,
+                new ScaleGestureDetector.SimpleOnScaleGestureListener() {
+                    @Override
+                    public boolean onScale(ScaleGestureDetector detector) {
+                        if (!writeMode) {
+                            zoom = clamp(zoom * detector.getScaleFactor(), 1f, 3f);
+                            invalidate();
+                        }
+                        return true;
+                    }
+                }
+        );
     }
 
     public void setListener(Listener listener) {
@@ -123,6 +132,7 @@ public final class PaperCanvasView extends View {
 
     public void setTool(int tool) {
         this.tool = tool;
+        cancelLiveStroke();
         invalidate();
     }
 
@@ -136,7 +146,7 @@ public final class PaperCanvasView extends View {
     }
 
     public void setPenSize(float size) {
-        penSize = Math.max(1.5f, Math.min(28f, size));
+        penSize = clamp(size, 1.5f, 22f);
         invalidate();
     }
 
@@ -155,7 +165,7 @@ public final class PaperCanvasView extends View {
     public void setWriteMode(boolean enabled) {
         writeMode = enabled;
         resetViewport();
-        cancelCurrentAction();
+        cancelLiveStroke();
         invalidate();
     }
 
@@ -186,14 +196,26 @@ public final class PaperCanvasView extends View {
     }
 
     public void loadBitmap(Bitmap bitmap) {
+        cancelLiveStroke();
+
         if (inkBitmap != null && inkBitmap != bitmap && !inkBitmap.isRecycled()) {
             inkBitmap.recycle();
         }
-        inkBitmap = bitmap == null ? Bitmap.createBitmap(PAGE_WIDTH, PAGE_HEIGHT, Bitmap.Config.ARGB_8888) : bitmap;
+        if (baseBitmap != null && !baseBitmap.isRecycled()) {
+            baseBitmap.recycle();
+        }
+
+        if (bitmap == null) {
+            inkBitmap = Bitmap.createBitmap(PAGE_WIDTH, PAGE_HEIGHT, Bitmap.Config.ARGB_8888);
+        } else {
+            inkBitmap = bitmap;
+        }
+
+        // One stable base copy for session-local vector undo. We never make a full-page
+        // PNG snapshot for every pen/eraser action.
+        baseBitmap = inkBitmap.copy(Bitmap.Config.ARGB_8888, true);
         undo.clear();
         redo.clear();
-        actionSnapshot = null;
-        resetLiveStroke();
         resetViewport();
         invalidate();
     }
@@ -208,107 +230,102 @@ public final class PaperCanvasView extends View {
 
     public void addText(String text, float pageX, float pageY) {
         if (inkBitmap == null || text == null || text.trim().isEmpty()) return;
-        beginAction();
-        Canvas c = new Canvas(inkBitmap);
-        Paint textPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        textPaint.setColor(inkColor);
-        textPaint.setTextSize(Math.max(26f, penSize * 6.0f));
-        textPaint.setTypeface(Typeface.create("sans", Typeface.NORMAL));
-        String[] lines = text.split("\n");
-        float y = clamp(pageY, 20f, PAGE_HEIGHT - 20f);
-        for (String line : lines) {
-            c.drawText(line, clamp(pageX, 10f, PAGE_WIDTH - 20f), y, textPaint);
-            y += textPaint.getTextSize() * 1.25f;
-        }
-        finishAction();
+        execute(new TextCommand(text.trim(), clamp(pageX, 12f, PAGE_WIDTH - 24f),
+                clamp(pageY, 24f, PAGE_HEIGHT - 24f), inkColor, Math.max(28f, penSize * 6f)));
     }
 
     public void addImage(Bitmap image) {
-        if (inkBitmap == null || image == null) return;
-        beginAction();
+        if (inkBitmap == null || image == null || image.isRecycled()) return;
+
         int maxWidth = (int) (PAGE_WIDTH * 0.72f);
         int maxHeight = (int) (PAGE_HEIGHT * 0.58f);
-        float scale = Math.min(1f, Math.min(maxWidth / (float) image.getWidth(), maxHeight / (float) image.getHeight()));
+        float scale = Math.min(
+                1f,
+                Math.min(maxWidth / (float) image.getWidth(), maxHeight / (float) image.getHeight())
+        );
         int w = Math.max(1, Math.round(image.getWidth() * scale));
         int h = Math.max(1, Math.round(image.getHeight() * scale));
-        float left = (PAGE_WIDTH - w) * 0.5f;
-        float top = (PAGE_HEIGHT - h) * 0.25f;
-        RectF dst = new RectF(left, top, left + w, top + h);
-        Canvas c = new Canvas(inkBitmap);
-        c.drawBitmap(image, null, dst, bitmapPaint);
-        finishAction();
+
+        Bitmap copy = image.copy(Bitmap.Config.ARGB_8888, true);
+        RectF dst = new RectF(
+                (PAGE_WIDTH - w) * 0.5f,
+                (PAGE_HEIGHT - h) * 0.25f,
+                (PAGE_WIDTH - w) * 0.5f + w,
+                (PAGE_HEIGHT - h) * 0.25f + h
+        );
+
+        if (copy.getWidth() != w || copy.getHeight() != h) {
+            Bitmap scaled = Bitmap.createScaledBitmap(copy, w, h, true);
+            copy.recycle();
+            copy = scaled;
+        }
+
+        execute(new ImageCommand(copy, dst));
     }
 
     public void clearPage() {
         if (inkBitmap == null) return;
-        beginAction();
-        Canvas c = new Canvas(inkBitmap);
-        c.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR);
-        finishAction();
+        execute(new ClearCommand());
     }
 
     public void undo() {
         if (undo.isEmpty() || inkBitmap == null) return;
-        byte[] previous = undo.removeLast();
-        redo.addLast(snapshot());
-        restore(previous);
-        actionSnapshot = null;
-        if (listener != null) listener.onCanvasDirty();
+        EditCommand command = undo.removeLast();
+        redo.addLast(command);
+        rebuildFromBase();
+        invalidate();
+        notifyDirty();
     }
 
     public void redo() {
         if (redo.isEmpty() || inkBitmap == null) return;
-        byte[] next = redo.removeLast();
-        undo.addLast(snapshot());
-        restore(next);
-        actionSnapshot = null;
-        if (listener != null) listener.onCanvasDirty();
-    }
-
-    private void beginAction() {
-        if (inkBitmap == null) return;
-        actionSnapshot = snapshot();
-        undo.addLast(actionSnapshot);
-        while (undo.size() > 14) undo.removeFirst();
-        redo.clear();
-    }
-
-    private void finishAction() {
-        actionSnapshot = null;
-        drawing = false;
-        panning = false;
-        activePointerId = -1;
-        if (getParent() != null) getParent().requestDisallowInterceptTouchEvent(false);
+        EditCommand command = redo.removeLast();
+        undo.addLast(command);
+        applyCommand(command);
         invalidate();
-        if (listener != null) listener.onCanvasDirty();
+        notifyDirty();
     }
 
-    private void cancelCurrentAction() {
-        if (actionSnapshot != null && inkBitmap != null) {
-            if (!undo.isEmpty() && undo.peekLast() == actionSnapshot) undo.removeLast();
-            restore(actionSnapshot);
-            actionSnapshot = null;
+    private void execute(EditCommand command) {
+        if (command == null || inkBitmap == null) return;
+        undo.addLast(command);
+        while (undo.size() > 80) {
+            EditCommand old = undo.removeFirst();
+            old.release();
         }
-        drawing = false;
-        panning = false;
-        activePointerId = -1;
-        ignoredDown = false;
-        resetLiveStroke();
-        invalidate();
+        releaseRedo();
+        applyCommand(command);
+        notifyDirty();
     }
 
-    private byte[] snapshot() {
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
-        inkBitmap.compress(Bitmap.CompressFormat.PNG, 100, out);
-        return out.toByteArray();
+    private void applyCommand(EditCommand command) {
+        command.apply(new Canvas(inkBitmap));
     }
 
-    private void restore(byte[] bytes) {
-        android.graphics.Bitmap decoded = BitmapFactoryCompat.decode(bytes);
-        if (decoded == null) return;
-        if (inkBitmap != null && !inkBitmap.isRecycled()) inkBitmap.recycle();
-        inkBitmap = decoded;
-        invalidate();
+    private void rebuildFromBase() {
+        if (baseBitmap == null) return;
+        Bitmap rebuilt = baseBitmap.copy(Bitmap.Config.ARGB_8888, true);
+        Bitmap old = inkBitmap;
+        inkBitmap = rebuilt;
+
+        Canvas canvas = new Canvas(inkBitmap);
+        for (EditCommand command : undo) {
+            command.apply(canvas);
+        }
+
+        if (old != null && old != baseBitmap && !old.isRecycled()) {
+            old.recycle();
+        }
+    }
+
+    private void releaseRedo() {
+        while (!redo.isEmpty()) {
+            redo.removeFirst().release();
+        }
+    }
+
+    private void notifyDirty() {
+        if (listener != null) listener.onCanvasDirty();
     }
 
     @Override
@@ -353,6 +370,7 @@ public final class PaperCanvasView extends View {
 
         canvas.save();
         canvas.clipRect(pageRect);
+
         float scale = currentScale();
         canvas.translate(pageRect.left, pageRect.top);
         canvas.scale(scale, scale);
@@ -363,20 +381,37 @@ public final class PaperCanvasView extends View {
             canvas.drawBitmap(inkBitmap, 0f, 0f, bitmapPaint);
         }
 
-        if (liveStrokeActive && (tool == TOOL_PEN || tool == TOOL_HIGHLIGHTER || tool == TOOL_ERASER)) {
-            Paint livePaint = configureStrokePaint(tool == TOOL_ERASER);
-            livePaint.setStrokeCap(Paint.Cap.ROUND);
-            livePaint.setStrokeJoin(Paint.Join.ROUND);
-            livePaint.setStyle(Paint.Style.STROKE);
+        if (liveStrokeActive && tool != TOOL_ERASER
+                && (tool == TOOL_PEN || tool == TOOL_HIGHLIGHTER)) {
+            Paint livePaint = configurePaint(tool == TOOL_HIGHLIGHTER);
             canvas.drawPath(liveStroke, livePaint);
-            if (!liveStrokeMoved) canvas.drawPoint(liveStartX, liveStartY, livePaint);
+
+            if (liveStrokeMoved) {
+                canvas.drawLine(
+                        liveCurveEndX,
+                        liveCurveEndY,
+                        liveLastX,
+                        liveLastY,
+                        livePaint
+                );
+            } else {
+                canvas.drawPoint(liveLastX, liveLastY, livePaint);
+            }
+        }
+
+        if (liveStrokeActive && tool == TOOL_ERASER) {
+            Paint eraserPreview = new Paint(Paint.ANTI_ALIAS_FLAG);
+            eraserPreview.setStyle(Paint.Style.STROKE);
+            eraserPreview.setStrokeWidth(Math.max(1f, penSize * 0.45f));
+            eraserPreview.setColor(0x88606A78);
+            canvas.drawCircle(liveLastX, liveLastY, eraserRadius(), eraserPreview);
         }
 
         if (drawing && isShapeTool(tool)) {
-            Paint preview = configureStrokePaint(false);
+            Paint preview = configurePaint(false);
             preview.setStyle(Paint.Style.STROKE);
             preview.setColor(inkColor);
-            preview.setAlpha(200);
+            preview.setAlpha(210);
             preview.setStrokeWidth(Math.max(2f, penSize));
             RectF rect = new RectF(
                     Math.min(shapeStartX, shapeEndX),
@@ -384,6 +419,7 @@ public final class PaperCanvasView extends View {
                     Math.max(shapeStartX, shapeEndX),
                     Math.max(shapeStartY, shapeEndY)
             );
+
             if (tool == TOOL_LINE) {
                 canvas.drawLine(shapeStartX, shapeStartY, shapeEndX, shapeEndY, preview);
             } else if (tool == TOOL_RECT) {
@@ -395,50 +431,50 @@ public final class PaperCanvasView extends View {
 
         canvas.restore();
 
-        Paint shadow = new Paint(Paint.ANTI_ALIAS_FLAG);
-        shadow.setColor(0x20000000);
-        shadow.setStyle(Paint.Style.STROKE);
-        shadow.setStrokeWidth(dp(1));
-        canvas.drawRect(pageRect, shadow);
+        Paint border = new Paint(Paint.ANTI_ALIAS_FLAG);
+        border.setStyle(Paint.Style.STROKE);
+        border.setStrokeWidth(dp(1));
+        border.setColor(0x20000000);
+        canvas.drawRect(pageRect, border);
     }
 
     private boolean isShapeTool(int value) {
         return value == TOOL_LINE || value == TOOL_RECT || value == TOOL_OVAL;
     }
 
-    private Paint configureStrokePaint(boolean eraser) {
+    private Paint configurePaint(boolean highlighter) {
         paint.reset();
         paint.setAntiAlias(true);
         paint.setDither(true);
-        paint.setFilterBitmap(true);
         paint.setStrokeCap(Paint.Cap.ROUND);
         paint.setStrokeJoin(Paint.Join.ROUND);
         paint.setStyle(Paint.Style.STROKE);
+        paint.setXfermode(null);
 
-        if (eraser) {
-            paint.setColor(Color.TRANSPARENT);
-            paint.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.CLEAR));
-            paint.setStrokeWidth(penSize * 3.0f);
-        } else {
-            paint.setXfermode(null);
-            paint.setColor(inkColor);
-            paint.setStrokeWidth(penSize);
-            if (tool == TOOL_HIGHLIGHTER) {
-                paint.setAlpha(88);
-                paint.setStrokeWidth(penSize * 3.2f);
-                paint.setStrokeCap(Paint.Cap.SQUARE);
-            } else {
-                paint.setAlpha(255);
-            }
+        paint.setColor(inkColor);
+        paint.setAlpha(highlighter ? 90 : 255);
+        paint.setStrokeWidth(highlighter ? penSize * 3.0f : penSize);
+        if (highlighter) {
+            paint.setStrokeCap(Paint.Cap.SQUARE);
         }
         return paint;
     }
 
+    private Paint configureEraserPaint() {
+        Paint eraser = new Paint(Paint.ANTI_ALIAS_FLAG);
+        eraser.setAntiAlias(true);
+        eraser.setStyle(Paint.Style.STROKE);
+        eraser.setStrokeCap(Paint.Cap.ROUND);
+        eraser.setStrokeJoin(Paint.Join.ROUND);
+        eraser.setStrokeWidth(penSize * 3.0f);
+        eraser.setColor(Color.TRANSPARENT);
+        eraser.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.CLEAR));
+        return eraser;
+    }
+
     @Override
     public boolean onTouchEvent(MotionEvent event) {
-        if (!writeMode) {
-            return handlePanTouch(event);
-        }
+        if (!writeMode) return handlePanTouch(event);
         return handleWriteTouch(event);
     }
 
@@ -450,7 +486,7 @@ public final class PaperCanvasView extends View {
                 activePointerId = event.getPointerId(0);
                 panLastX = event.getX(0);
                 panLastY = event.getY(0);
-                if (getParent() != null) getParent().requestDisallowInterceptTouchEvent(true);
+                requestParentIntercept(true);
                 return true;
 
             case MotionEvent.ACTION_MOVE:
@@ -461,7 +497,7 @@ public final class PaperCanvasView extends View {
                     panY += y - panLastY;
                     panLastX = x;
                     panLastY = y;
-                    invalidate();
+                    postInvalidateOnAnimation();
                 }
                 return true;
 
@@ -469,8 +505,9 @@ public final class PaperCanvasView extends View {
             case MotionEvent.ACTION_CANCEL:
                 panning = false;
                 activePointerId = -1;
-                if (getParent() != null) getParent().requestDisallowInterceptTouchEvent(false);
+                requestParentIntercept(false);
                 return true;
+
             default:
                 return true;
         }
@@ -478,12 +515,14 @@ public final class PaperCanvasView extends View {
 
     private boolean handleWriteTouch(MotionEvent event) {
         switch (event.getActionMasked()) {
-            case MotionEvent.ACTION_DOWN:
+            case MotionEvent.ACTION_DOWN: {
                 ignoredDown = false;
+
                 if (event.getPointerCount() != 1) {
                     ignoredDown = true;
                     return true;
                 }
+
                 if (palmShield && isLikelyPalm(event, 0)) {
                     ignoredDown = true;
                     return true;
@@ -491,120 +530,112 @@ public final class PaperCanvasView extends View {
 
                 activePointerId = event.getPointerId(0);
                 drawing = true;
-                if (getParent() != null) getParent().requestDisallowInterceptTouchEvent(true);
+                requestParentIntercept(true);
 
-                if (tool == TOOL_PEN || tool == TOOL_HIGHLIGHTER || tool == TOOL_ERASER || isShapeTool(tool)) {
-                    beginAction();
+                if (isDrawingTool(tool) || isShapeTool(tool)) {
+                    beginLiveOrShapeAction(event.getX(0), event.getY(0));
                 }
 
-                float[] p = screenToPage(event.getX(0), event.getY(0));
-                lastPageX = p[0];
-                lastPageY = p[1];
-
-                if (tool == TOOL_PEN || tool == TOOL_HIGHLIGHTER || tool == TOOL_ERASER) {
-                    beginLiveStroke(p[0], p[1]);
-                    invalidate();
-                    if (soundEngine != null && tool != TOOL_ERASER) soundEngine.tick();
-                } else if (isShapeTool(tool)) {
-                    shapeStartX = p[0];
-                    shapeStartY = p[1];
-                    shapeEndX = p[0];
-                    shapeEndY = p[1];
-                    invalidate();
-                } else if (tool == TOOL_TEXT) {
+                if (tool == TOOL_TEXT) {
                     drawing = false;
                     activePointerId = -1;
+                    requestParentIntercept(false);
+                    screenToPage(event.getX(0), event.getY(0), pagePoint);
+                    if (listener != null) {
+                        listener.onRequestText(pagePoint[0], pagePoint[1]);
+                    }
+                    return true;
                 }
-                return true;
 
-            case MotionEvent.ACTION_MOVE:
+                return true;
+            }
+
+            case MotionEvent.ACTION_MOVE: {
                 if (ignoredDown || activePointerId < 0) return true;
+
                 int index = event.findPointerIndex(activePointerId);
                 if (index < 0) return true;
 
-                float[] current = screenToPage(event.getX(index), event.getY(index));
-
-                if (tool == TOOL_PEN || tool == TOOL_HIGHLIGHTER || tool == TOOL_ERASER) {
+                if (isDrawingTool(tool)) {
                     for (int h = 0; h < event.getHistorySize(); h++) {
-                        float[] hp = screenToPage(
+                        screenToPage(
                                 event.getHistoricalX(index, h),
-                                event.getHistoricalY(index, h)
+                                event.getHistoricalY(index, h),
+                                pagePoint
                         );
-                        appendLivePoint(hp[0], hp[1]);
+                        appendLivePoint(pagePoint[0], pagePoint[1]);
                     }
 
-                    appendLivePoint(current[0], current[1]);
-                    invalidate();
+                    screenToPage(event.getX(index), event.getY(index), pagePoint);
+                    appendLivePoint(pagePoint[0], pagePoint[1]);
+
+                    postInvalidateOnAnimation();
                     if (soundEngine != null && tool != TOOL_ERASER) soundEngine.tick();
                 } else if (isShapeTool(tool)) {
-                    shapeEndX = current[0];
-                    shapeEndY = current[1];
-                    invalidate();
+                    screenToPage(event.getX(index), event.getY(index), pagePoint);
+                    shapeEndX = pagePoint[0];
+                    shapeEndY = pagePoint[1];
+                    postInvalidateOnAnimation();
                 }
-                return true;
 
-            case MotionEvent.ACTION_UP:
+                return true;
+            }
+
+            case MotionEvent.ACTION_UP: {
                 if (ignoredDown) {
                     ignoredDown = false;
                     return true;
                 }
 
-                if (tool == TOOL_TEXT) {
-                    float[] textPoint = screenToPage(event.getX(0), event.getY(0));
-                    drawing = false;
-                    activePointerId = -1;
-                    if (getParent() != null) getParent().requestDisallowInterceptTouchEvent(false);
-                    if (listener != null) listener.onRequestText(textPoint[0], textPoint[1]);
+                if (tool == TOOL_TEXT) return true;
+
+                if (isDrawingTool(tool)) {
+                    screenToPage(event.getX(0), event.getY(0), pagePoint);
+                    appendLivePoint(pagePoint[0], pagePoint[1]);
+                    commitLiveStroke();
                     return true;
                 }
 
                 if (isShapeTool(tool)) {
-                    float[] end = screenToPage(event.getX(0), event.getY(0));
-                    shapeEndX = end[0];
-                    shapeEndY = end[1];
+                    screenToPage(event.getX(0), event.getY(0), pagePoint);
+                    shapeEndX = pagePoint[0];
+                    shapeEndY = pagePoint[1];
                     commitShape();
-                } else if (tool == TOOL_PEN || tool == TOOL_HIGHLIGHTER || tool == TOOL_ERASER) {
-                    float[] end = screenToPage(event.getX(0), event.getY(0));
-                    appendLivePoint(end[0], end[1]);
-                    commitLiveStroke();
-                } else {
-                    drawing = false;
-                    activePointerId = -1;
-                    if (getParent() != null) getParent().requestDisallowInterceptTouchEvent(false);
+                    return true;
                 }
+
+                drawing = false;
+                activePointerId = -1;
+                requestParentIntercept(false);
                 return true;
+            }
 
             case MotionEvent.ACTION_CANCEL:
-                cancelCurrentAction();
+                cancelLiveStroke();
                 return true;
 
             case MotionEvent.ACTION_POINTER_DOWN:
-                // Passive capacitive styluses are reported as ordinary touch contacts. If a broad
-                // palm contact arrived first, allow a later, small contact to take over as the
-                // writing contact. If a stroke is already active, keep extra contacts ignored.
+                // With a passive stylus, Android reports stylus contact as ordinary touch.
+                // If a broad palm arrived first, permit a later small contact to take over.
                 if (activePointerId < 0 && ignoredDown && event.getPointerCount() >= 2) {
                     int newIndex = event.getActionIndex();
-                    if (newIndex >= 0 && newIndex < event.getPointerCount() && !isLikelyPalm(event, newIndex)) {
+                    if (newIndex >= 0 && newIndex < event.getPointerCount()
+                            && !isLikelyPalm(event, newIndex)) {
+
                         activePointerId = event.getPointerId(newIndex);
                         ignoredDown = false;
                         drawing = true;
-                        if (tool == TOOL_PEN || tool == TOOL_HIGHLIGHTER || tool == TOOL_ERASER || isShapeTool(tool)) {
-                            beginAction();
-                        }
-                        float[] takeover = screenToPage(event.getX(newIndex), event.getY(newIndex));
-                        lastPageX = takeover[0];
-                        lastPageY = takeover[1];
+                        requestParentIntercept(true);
 
-                        if (tool == TOOL_PEN || tool == TOOL_HIGHLIGHTER || tool == TOOL_ERASER) {
-                            beginLiveStroke(takeover[0], takeover[1]);
-                            if (soundEngine != null && tool != TOOL_ERASER) soundEngine.tick();
+                        screenToPage(event.getX(newIndex), event.getY(newIndex), pagePoint);
+                        if (isDrawingTool(tool)) {
+                            beginLiveStroke(pagePoint[0], pagePoint[1]);
                         } else if (isShapeTool(tool)) {
-                            shapeStartX = takeover[0];
-                            shapeStartY = takeover[1];
-                            shapeEndX = takeover[0];
-                            shapeEndY = takeover[1];
+                            shapeStartX = pagePoint[0];
+                            shapeStartY = pagePoint[1];
+                            shapeEndX = pagePoint[0];
+                            shapeEndY = pagePoint[1];
                         }
-                        if (getParent() != null) getParent().requestDisallowInterceptTouchEvent(true);
                         invalidate();
                     }
                 }
@@ -618,41 +649,61 @@ public final class PaperCanvasView extends View {
         }
     }
 
-    private boolean isLikelyPalm(MotionEvent event, int index) {
-        float major = event.getToolMajor(index);
-        float minor = event.getToolMinor(index);
-        float size = event.getSize(index);
-        float threshold = dp(34);
-        return major > threshold || minor > threshold || size > 0.36f;
+    private void beginLiveOrShapeAction(float screenX, float screenY) {
+        screenToPage(screenX, screenY, pagePoint);
+        if (isDrawingTool(tool)) {
+            beginLiveStroke(pagePoint[0], pagePoint[1]);
+        } else if (isShapeTool(tool)) {
+            shapeStartX = pagePoint[0];
+            shapeStartY = pagePoint[1];
+            shapeEndX = pagePoint[0];
+            shapeEndY = pagePoint[1];
+        }
+    }
+
+    private boolean isDrawingTool(int value) {
+        return value == TOOL_PEN || value == TOOL_HIGHLIGHTER || value == TOOL_ERASER;
     }
 
     private void beginLiveStroke(float x, float y) {
         liveStroke.reset();
+        livePoints.clear();
+        livePoints.add(new PointF(x, y));
         liveStroke.moveTo(x, y);
-        liveStartX = x;
-        liveStartY = y;
         liveLastX = x;
         liveLastY = y;
+        liveCurveEndX = x;
+        liveCurveEndY = y;
         liveStrokeActive = true;
         liveStrokeMoved = false;
     }
 
     private void appendLivePoint(float rawX, float rawY) {
-        if (!liveStrokeActive) beginLiveStroke(rawX, rawY);
+        if (!liveStrokeActive) {
+            beginLiveStroke(rawX, rawY);
+            return;
+        }
 
-        // Conservative low-latency filter for capacitive touch jitter.
-        float alpha = 1f - (stabilizer * 0.45f);
+        float alpha = 1f - stabilizer;
         float x = liveLastX + (rawX - liveLastX) * alpha;
         float y = liveLastY + (rawY - liveLastY) * alpha;
 
-        if (Math.hypot(x - liveLastX, y - liveLastY) < 0.35f) return;
+        float distance = (float) Math.hypot(x - liveLastX, y - liveLastY);
+        if (distance < 0.22f) return;
 
-        float midX = (liveLastX + x) * 0.5f;
-        float midY = (liveLastY + y) * 0.5f;
+        livePoints.add(new PointF(x, y));
 
-        // Quadratic midpoint interpolation makes each new sample join the prior
-        // sample with a smooth curve instead of a visible polygon/bead.
-        liveStroke.quadTo(liveLastX, liveLastY, midX, midY);
+        if (livePoints.size() == 2) {
+            liveStroke.lineTo(x, y);
+            liveCurveEndX = x;
+            liveCurveEndY = y;
+        } else {
+            float midX = (liveLastX + x) * 0.5f;
+            float midY = (liveLastY + y) * 0.5f;
+            liveStroke.quadTo(liveLastX, liveLastY, midX, midY);
+            liveCurveEndX = midX;
+            liveCurveEndY = midY;
+        }
 
         liveLastX = x;
         liveLastY = y;
@@ -660,84 +711,78 @@ public final class PaperCanvasView extends View {
     }
 
     private void commitLiveStroke() {
-        if (!liveStrokeActive || inkBitmap == null) {
-            finishAction();
+        if (!liveStrokeActive || livePoints.isEmpty()) {
+            cancelLiveStroke();
             return;
         }
 
-        if (liveStrokeMoved) {
-            liveStroke.quadTo(liveLastX, liveLastY, liveLastX, liveLastY);
+        ArrayList<PointF> points = new ArrayList<>(livePoints.size());
+        for (PointF point : livePoints) {
+            points.add(new PointF(point.x, point.y));
         }
 
-        Paint p = configureStrokePaint(tool == TOOL_ERASER);
-        p.setStrokeCap(Paint.Cap.ROUND);
-        p.setStrokeJoin(Paint.Join.ROUND);
-        p.setStyle(Paint.Style.STROKE);
-
-        Canvas c = new Canvas(inkBitmap);
-        c.drawPath(liveStroke, p);
-        if (!liveStrokeMoved) c.drawPoint(liveStartX, liveStartY, p);
-        p.setXfermode(null);
-
-        finishAction();
+        execute(new StrokeCommand(points, inkColor, penSize, tool));
+        cancelLiveStroke();
     }
 
-    private void resetLiveStroke() {
+    private void cancelLiveStroke() {
         liveStroke.reset();
+        livePoints.clear();
         liveStrokeActive = false;
         liveStrokeMoved = false;
-        liveStartX = 0f;
-        liveStartY = 0f;
-        liveLastX = 0f;
-        liveLastY = 0f;
-    }
-
-    private float getEffectiveWidth(float pressure, int toolType) {
-        if (tool == TOOL_ERASER) return penSize * 3.0f;
-        if (tool == TOOL_HIGHLIGHTER) return penSize * 3.2f;
-        if (toolType == MotionEvent.TOOL_TYPE_STYLUS && pressure > 0f) {
-            float normalized = Math.max(0.15f, Math.min(1f, pressure));
-            return penSize * (0.72f + normalized * 0.48f);
-        }
-        // Passive capacitive styluses identify as finger/touch on Android, so use a
-        // stable width rather than inventing pressure data.
-        return penSize;
+        drawing = false;
+        activePointerId = -1;
+        requestParentIntercept(false);
+        invalidate();
     }
 
     private void commitShape() {
-        if (inkBitmap == null) return;
-        Paint p = configureStrokePaint(false);
-        p.setStyle(Paint.Style.STROKE);
-        p.setStrokeWidth(Math.max(2f, penSize));
-        p.setAlpha(255);
-
         RectF rect = new RectF(
                 Math.min(shapeStartX, shapeEndX),
                 Math.min(shapeStartY, shapeEndY),
                 Math.max(shapeStartX, shapeEndX),
                 Math.max(shapeStartY, shapeEndY)
         );
-        Canvas c = new Canvas(inkBitmap);
-        if (tool == TOOL_LINE) {
-            c.drawLine(shapeStartX, shapeStartY, shapeEndX, shapeEndY, p);
-        } else if (tool == TOOL_RECT) {
-            c.drawRect(rect, p);
-        } else if (tool == TOOL_OVAL) {
-            c.drawOval(rect, p);
-        }
-        p.setXfermode(null);
-        finishAction();
+
+        execute(new ShapeCommand(
+                tool,
+                shapeStartX,
+                shapeStartY,
+                shapeEndX,
+                shapeEndY,
+                rect,
+                inkColor,
+                Math.max(2f, penSize)
+        ));
+
+        drawing = false;
+        activePointerId = -1;
+        requestParentIntercept(false);
     }
 
-    private float[] screenToPage(float screenX, float screenY) {
+    private float eraserRadius() {
+        return Math.max(dp(8f), penSize * 1.5f);
+    }
+
+    private boolean isLikelyPalm(MotionEvent event, int index) {
+        float major = event.getToolMajor(index);
+        float minor = event.getToolMinor(index);
+        float size = event.getSize(index);
+        float threshold = dp(28f);
+        return major > threshold || minor > threshold || size > 0.30f;
+    }
+
+    private void requestParentIntercept(boolean disallow) {
+        if (getParent() != null) {
+            getParent().requestDisallowInterceptTouchEvent(disallow);
+        }
+    }
+
+    private void screenToPage(float screenX, float screenY, float[] out) {
         updatePageRect();
         float scale = currentScale();
-        float x = (screenX - pageRect.left) / scale;
-        float y = (screenY - pageRect.top) / scale;
-        return new float[] {
-                clamp(x, 0f, PAGE_WIDTH),
-                clamp(y, 0f, PAGE_HEIGHT)
-        };
+        out[0] = clamp((screenX - pageRect.left) / scale, 0f, PAGE_WIDTH);
+        out[1] = clamp((screenY - pageRect.top) / scale, 0f, PAGE_HEIGHT);
     }
 
     private float dp(float value) {
@@ -746,6 +791,189 @@ public final class PaperCanvasView extends View {
 
     private static float clamp(float value, float min, float max) {
         return Math.max(min, Math.min(max, value));
+    }
+
+    private abstract static class EditCommand {
+        abstract void apply(Canvas canvas);
+        void release() {}
+    }
+
+    private static Path buildSmoothPath(ArrayList<PointF> points) {
+        Path path = new Path();
+        if (points.isEmpty()) return path;
+
+        PointF first = points.get(0);
+        path.moveTo(first.x, first.y);
+
+        if (points.size() == 1) return path;
+        if (points.size() == 2) {
+            PointF second = points.get(1);
+            path.lineTo(second.x, second.y);
+            return path;
+        }
+
+        PointF previous = points.get(0);
+        for (int i = 1; i < points.size(); i++) {
+            PointF current = points.get(i);
+            if (i == points.size() - 1) {
+                path.quadTo(previous.x, previous.y, current.x, current.y);
+            } else {
+                PointF next = points.get(i + 1);
+                float midX = (current.x + next.x) * 0.5f;
+                float midY = (current.y + next.y) * 0.5f;
+                path.quadTo(current.x, current.y, midX, midY);
+            }
+            previous = current;
+        }
+
+        return path;
+    }
+
+    private static final class StrokeCommand extends EditCommand {
+        private final ArrayList<PointF> points;
+        private final int color;
+        private final float width;
+        private final int tool;
+
+        StrokeCommand(ArrayList<PointF> points, int color, float width, int tool) {
+            this.points = points;
+            this.color = color;
+            this.width = width;
+            this.tool = tool;
+        }
+
+        @Override
+        void apply(Canvas canvas) {
+            Paint p = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.DITHER_FLAG);
+            p.setStyle(Paint.Style.STROKE);
+            p.setStrokeCap(Paint.Cap.ROUND);
+            p.setStrokeJoin(Paint.Join.ROUND);
+            p.setStrokeWidth(tool == TOOL_ERASER ? width * 3f
+                    : tool == TOOL_HIGHLIGHTER ? width * 3f : width);
+
+            if (tool == TOOL_ERASER) {
+                p.setColor(Color.TRANSPARENT);
+                p.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.CLEAR));
+            } else {
+                p.setColor(color);
+                p.setAlpha(tool == TOOL_HIGHLIGHTER ? 90 : 255);
+                if (tool == TOOL_HIGHLIGHTER) p.setStrokeCap(Paint.Cap.SQUARE);
+            }
+
+            Path path = buildSmoothPath(points);
+            if (points.size() == 1) {
+                p.setStyle(Paint.Style.FILL);
+                canvas.drawCircle(points.get(0).x, points.get(0).y, Math.max(0.8f, p.getStrokeWidth() * 0.5f), p);
+            } else {
+                canvas.drawPath(path, p);
+            }
+
+            p.setXfermode(null);
+        }
+    }
+
+    private static final class ShapeCommand extends EditCommand {
+        private final int tool;
+        private final float startX;
+        private final float startY;
+        private final float endX;
+        private final float endY;
+        private final RectF rect;
+        private final int color;
+        private final float width;
+
+        ShapeCommand(int tool, float startX, float startY, float endX, float endY,
+                     RectF rect, int color, float width) {
+            this.tool = tool;
+            this.startX = startX;
+            this.startY = startY;
+            this.endX = endX;
+            this.endY = endY;
+            this.rect = new RectF(rect);
+            this.color = color;
+            this.width = width;
+        }
+
+        @Override
+        void apply(Canvas canvas) {
+            Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+            p.setStyle(Paint.Style.STROKE);
+            p.setStrokeCap(Paint.Cap.ROUND);
+            p.setStrokeJoin(Paint.Join.ROUND);
+            p.setStrokeWidth(width);
+            p.setColor(color);
+
+            if (tool == TOOL_LINE) {
+                canvas.drawLine(startX, startY, endX, endY, p);
+            } else if (tool == TOOL_RECT) {
+                canvas.drawRect(rect, p);
+            } else if (tool == TOOL_OVAL) {
+                canvas.drawOval(rect, p);
+            }
+        }
+    }
+
+    private static final class TextCommand extends EditCommand {
+        private final String text;
+        private final float x;
+        private final float y;
+        private final int color;
+        private final float size;
+
+        TextCommand(String text, float x, float y, int color, float size) {
+            this.text = text;
+            this.x = x;
+            this.y = y;
+            this.color = color;
+            this.size = size;
+        }
+
+        @Override
+        void apply(Canvas canvas) {
+            Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+            p.setColor(color);
+            p.setTextSize(size);
+            p.setTypeface(Typeface.create("sans", Typeface.NORMAL));
+
+            float lineY = y;
+            for (String line : text.split("\\n")) {
+                canvas.drawText(line, x, lineY, p);
+                lineY += size * 1.25f;
+            }
+        }
+    }
+
+    private static final class ImageCommand extends EditCommand {
+        private Bitmap bitmap;
+        private final RectF destination;
+
+        ImageCommand(Bitmap bitmap, RectF destination) {
+            this.bitmap = bitmap;
+            this.destination = new RectF(destination);
+        }
+
+        @Override
+        void apply(Canvas canvas) {
+            if (bitmap != null && !bitmap.isRecycled()) {
+                Paint p = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+                canvas.drawBitmap(bitmap, null, destination, p);
+            }
+        }
+
+        @Override
+        void release() {
+            if (bitmap != null && !bitmap.isRecycled()) {
+                bitmap.recycle();
+            }
+            bitmap = null;
+        }
+    }
+
+    private static final class ClearCommand extends EditCommand {
+        @Override
+        void apply(Canvas canvas) {
+            canvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR);
+        }
     }
 
     public static Bitmap renderPage(Bitmap ink, String paperType, boolean marginEnabled) {
@@ -802,12 +1030,6 @@ public final class PaperCanvasView extends View {
             margin.setColor(Color.rgb(236, 139, 151));
             margin.setStrokeWidth(2f);
             canvas.drawLine(108, 0, 108, PAGE_HEIGHT, margin);
-        }
-    }
-
-    private static final class BitmapFactoryCompat {
-        static Bitmap decode(byte[] bytes) {
-            return android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
         }
     }
 }
