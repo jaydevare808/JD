@@ -9,6 +9,8 @@ import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.provider.Settings;
 import android.text.InputType;
 import android.view.Gravity;
@@ -49,6 +51,8 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
     private NotebookStore store;
     private SoundEngine soundEngine;
     private ExecutorService saveExecutor;
+    private final Handler saveHandler = new Handler(Looper.getMainLooper());
+    private Runnable pendingSave;
 
     private NotebookStore.NotebookMeta currentNotebook;
     private int currentPageIndex = 0;
@@ -84,7 +88,8 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
 
     @Override
     protected void onDestroy() {
-        saveCurrentPage();
+        saveHandler.removeCallbacksAndMessages(null);
+        saveCurrentPageNow();
         if (saveExecutor != null) saveExecutor.shutdown();
         if (soundEngine != null) soundEngine.close();
         super.onDestroy();
@@ -93,7 +98,7 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
     @Override
     public void onBackPressed() {
         if (currentNotebook != null) {
-            saveCurrentPage();
+            saveCurrentPageNow();
             currentNotebook = null;
             showHome();
         } else {
@@ -358,6 +363,10 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
         image.setOnClickListener(v -> chooseImage());
         tools.addView(image);
 
+        Button study = toolbarButton("STUDY");
+        study.setOnClickListener(v -> showStudyTools(study));
+        tools.addView(study);
+
         toolsScroll.addView(tools);
         root.addView(toolsScroll);
 
@@ -498,11 +507,29 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
 
     private void saveCurrentPage() {
         if (currentNotebook == null || canvasView == null) return;
+
+        if (pendingSave != null) {
+            saveHandler.removeCallbacks(pendingSave);
+        }
+
+        pendingSave = () -> {
+            saveCurrentPageSnapshotAsync();
+            pendingSave = null;
+        };
+
+        saveHandler.postDelayed(pendingSave, 650L);
+    }
+
+    private void saveCurrentPageSnapshotAsync() {
+        if (currentNotebook == null || canvasView == null) return;
+
         try {
             NotebookStore.PageMeta page = currentNotebook.pages.get(currentPageIndex);
             Bitmap source = canvasView.getInkBitmap();
             if (source == null) return;
 
+            // Only make the expensive page copy after the user has paused writing.
+            // This removes the visible pause that used to happen after every stroke.
             Bitmap copy = source.copy(Bitmap.Config.ARGB_8888, false);
             store.save(currentNotebook);
             saveExecutor.submit(() -> {
@@ -526,7 +553,7 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
 
     @Override
     public void onCanvasDirty() {
-        saveLabel.setText("Saving…");
+        saveLabel.setText("Editing");
         saveCurrentPage();
     }
 
@@ -557,7 +584,7 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
     }
 
     private void addPage() {
-        saveCurrentPage();
+        saveCurrentPageNow();
         NotebookStore.PageMeta page = store.addPage(
                 currentNotebook,
                 "Page " + (currentNotebook.pages.size() + 1),
@@ -572,7 +599,7 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
     }
 
     private void movePage(int delta) {
-        saveCurrentPage();
+        saveCurrentPageNow();
         int next = currentPageIndex + delta;
         if (next < 0 || next >= currentNotebook.pages.size()) return;
         currentPageIndex = next;
@@ -607,7 +634,7 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
             if (which < 0) which = defaultChecked;
             currentNotebook.pages.get(currentPageIndex).paperType = values[which];
             canvasView.setPaperType(values[which]);
-            saveCurrentPage();
+            saveCurrentPageNow();
             try { store.save(currentNotebook); } catch (Exception ignored) {}
             dialog.dismiss();
         }));
@@ -812,7 +839,7 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
                 if (pendingExport == EXPORT_PDF) {
                     exportPdf(uri);
                 } else if (pendingExport == EXPORT_PNG) {
-                    saveCurrentPage();
+                    saveCurrentPageNow();
                     Bitmap page = canvasView.renderPageBitmap();
                     try (OutputStream out = getContentResolver().openOutputStream(uri)) {
                         page.compress(Bitmap.CompressFormat.PNG, 100, out);
@@ -824,7 +851,7 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
             }
 
             if (requestCode == REQUEST_BACKUP) {
-                saveCurrentPage();
+                saveCurrentPageNow();
                 String backup = store.exportBackup(currentNotebook, PaperCanvasView.PAGE_WIDTH, PaperCanvasView.PAGE_HEIGHT);
                 try (OutputStream out = getContentResolver().openOutputStream(uri)) {
                     out.write(backup.getBytes(StandardCharsets.UTF_8));
@@ -852,7 +879,7 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
     }
 
     private void exportPdf(Uri uri) throws Exception {
-        saveCurrentPage();
+        saveCurrentPageNow();
 
         android.graphics.pdf.PdfDocument document = new android.graphics.pdf.PdfDocument();
         try {
