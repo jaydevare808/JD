@@ -459,6 +459,20 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
         saveLabel.setText("Saved");
     }
 
+    private void saveCurrentPageNow() {
+        if (currentNotebook == null || canvasView == null) return;
+        try {
+            NotebookStore.PageMeta page = currentNotebook.pages.get(currentPageIndex);
+            if (canvasView.getInkBitmap() != null) {
+                store.savePageBitmap(page.id, canvasView.getInkBitmap());
+            }
+            store.save(currentNotebook);
+            if (saveLabel != null) saveLabel.setText("Saved");
+        } catch (Exception e) {
+            toast("Save failed");
+        }
+    }
+
     private void saveCurrentPage() {
         if (currentNotebook == null || canvasView == null) return;
         try {
@@ -694,25 +708,10 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
                 .setMessage("This deletes the notebook and its page images from PaperNote.")
                 .setNegativeButton("Cancel", null)
                 .setPositiveButton("Delete", (d, w) -> {
-                    // Files are private to the app. Delete metadata and page files together.
-                    // The store intentionally exposes no global delete API, so remove the files by restoring
-                    // an empty library state only through the dedicated helper below.
-                    deleteNotebookFiles(currentNotebook);
+                    store.deleteNotebook(currentNotebook);
                     currentNotebook = null;
                     showHome();
                 }).show();
-    }
-
-    private void deleteNotebookFiles(NotebookStore.NotebookMeta notebook) {
-        try {
-            java.lang.reflect.Field field = NotebookStore.class.getDeclaredField("notebooksDir");
-            field.setAccessible(true);
-            java.io.File notebooksDir = (java.io.File) field.get(store);
-            java.io.File meta = new java.io.File(notebooksDir, notebook.id + ".json");
-            if (meta.exists()) meta.delete();
-            for (NotebookStore.PageMeta page : notebook.pages) store.deletePageBitmap(page.id);
-        } catch (Exception ignored) {
-        }
     }
 
     private void chooseImage() {
@@ -730,6 +729,7 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
     }
 
     private void requestExport(int type) {
+        saveCurrentPageNow();
         pendingExport = type;
         String name;
         String mime;
