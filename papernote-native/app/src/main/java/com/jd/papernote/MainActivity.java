@@ -82,7 +82,14 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
             } catch (Exception ignored) {
             }
         }
-        showHome();
+
+        GoogleAuthManager authManager = GoogleAuthManager.get(this);
+        boolean offlineMode = getPreferences(MODE_PRIVATE).getBoolean("papernote_offline_mode", false);
+        if (authManager.getCurrentUser() != null || offlineMode) {
+            showHome();
+        } else {
+            showWelcome();
+        }
         UpdateManager.check(this, false);
     }
 
@@ -106,6 +113,110 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
         }
     }
 
+
+    private void showWelcome() {
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setGravity(Gravity.CENTER_HORIZONTAL);
+        root.setPadding(dp(28), dp(34), dp(28), dp(28));
+        root.setBackgroundColor(Color.rgb(246, 247, 250));
+
+        Space top = new Space(this);
+        root.addView(top, new LinearLayout.LayoutParams(1, 0, 0.65f));
+
+        TextView logo = text("P", 44, Color.WHITE, true);
+        logo.setGravity(Gravity.CENTER);
+        logo.setBackground(rounded(Color.rgb(64, 93, 230), 22));
+        root.addView(logo, new LinearLayout.LayoutParams(dp(92), dp(92)));
+
+        TextView title = text("PaperNote", 32, Color.rgb(23, 32, 51), true);
+        title.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(-1, -2);
+        titleLp.setMargins(0, dp(20), 0, 0);
+        root.addView(title, titleLp);
+
+        TextView subtitle = text(
+                "Your digital study notebook\\nWrite naturally. Practice without paper. Stay organized.",
+                15, 0xFF667085, false
+        );
+        subtitle.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams subLp = new LinearLayout.LayoutParams(-1, -2);
+        subLp.setMargins(0, dp(8), 0, 0);
+        root.addView(subtitle, subLp);
+
+        LinearLayout featureCard = new LinearLayout(this);
+        featureCard.setOrientation(LinearLayout.VERTICAL);
+        featureCard.setPadding(dp(18), dp(16), dp(18), dp(16));
+        featureCard.setBackground(rounded(Color.WHITE, 18));
+        TextView featureTitle = text("Built for study", 16, Color.rgb(23, 32, 51), true);
+        featureCard.addView(featureTitle);
+        featureCard.addView(text("Low-latency handwriting • Maths/Physics paper • PDF export • Offline notes • Focus tools", 13, 0xFF667085, false));
+        LinearLayout.LayoutParams fcLp = new LinearLayout.LayoutParams(-1, -2);
+        fcLp.setMargins(0, dp(22), 0, 0);
+        root.addView(featureCard, fcLp);
+
+        Button google = styledButton("Continue with Google", true);
+        LinearLayout.LayoutParams gp = new LinearLayout.LayoutParams(-1, dp(52));
+        gp.setMargins(0, dp(20), 0, dp(10));
+        root.addView(google, gp);
+
+        TextView status = text("", 12, 0xFF667085, false);
+        status.setGravity(Gravity.CENTER);
+        root.addView(status);
+
+        google.setOnClickListener(v -> {
+            google.setEnabled(false);
+            google.setText("Connecting…");
+            GoogleAuthManager.get(this).signIn(this, new GoogleAuthManager.Callback() {
+                @Override
+                public void onSuccess(com.google.firebase.auth.FirebaseUser user) {
+                    getPreferences(MODE_PRIVATE).edit().putBoolean("papernote_offline_mode", false).apply();
+                    runOnUiThread(() -> {
+                        google.setEnabled(true);
+                        google.setText("Continue with Google");
+                        showHome();
+                    });
+                }
+
+                @Override
+                public void onError(String message) {
+                    runOnUiThread(() -> {
+                        google.setEnabled(true);
+                        google.setText("Continue with Google");
+                        status.setText(message);
+                        new AlertDialog.Builder(MainActivity.this)
+                                .setTitle("Google sign-in")
+                                .setMessage(message)
+                                .setPositiveButton("OK", null)
+                                .show();
+                    });
+                }
+            });
+        });
+
+        Button offline = styledButton("Continue offline", false);
+        LinearLayout.LayoutParams op = new LinearLayout.LayoutParams(-1, dp(50));
+        root.addView(offline, op);
+        offline.setOnClickListener(v -> {
+            getPreferences(MODE_PRIVATE).edit().putBoolean("papernote_offline_mode", true).apply();
+            showHome();
+        });
+
+        TextView footer = text(
+                "Your notes remain on this device while offline. Google sign-in is used for account identity; cloud notebook sync will be added separately.",
+                11, 0xFF8A93A3, false
+        );
+        footer.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams fp = new LinearLayout.LayoutParams(-1, -2);
+        fp.setMargins(0, dp(18), 0, 0);
+        root.addView(footer, fp);
+
+        Space bottom = new Space(this);
+        root.addView(bottom, new LinearLayout.LayoutParams(1, 0, 1f));
+
+        setContentView(root);
+    }
+
     private void showHome() {
         currentNotebook = null;
         LinearLayout root = new LinearLayout(this);
@@ -120,7 +231,14 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
         TextView brand = text("PaperNote", 30, Color.WHITE, true);
         TextView subtitle = text("A handwriting-first study notebook for Maths, Physics, Chemistry and everyday learning.", 14, 0xFFD5DCE8, false);
         subtitle.setPadding(0, dp(6), 0, 0);
-        header.addView(brand);
+
+        LinearLayout brandRow = new LinearLayout(this);
+        brandRow.setGravity(Gravity.CENTER_VERTICAL);
+        brandRow.addView(brand, new LinearLayout.LayoutParams(0, -2, 1f));
+        Button account = toolbarButton("ACCOUNT");
+        account.setOnClickListener(v -> showAccountDialog());
+        brandRow.addView(account);
+        header.addView(brandRow);
         header.addView(subtitle);
         root.addView(header);
 
@@ -192,6 +310,35 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
             }
             @Override public void afterTextChanged(android.text.Editable s) {}
         });
+    }
+
+
+    private void showAccountDialog() {
+        GoogleAuthManager authManager = GoogleAuthManager.get(this);
+        com.google.firebase.auth.FirebaseUser user = authManager.getCurrentUser();
+
+        String identity;
+        if (user != null) {
+            identity = "Signed in with Google\\n" +
+                    (user.getDisplayName() == null ? "" : user.getDisplayName() + "\\n") +
+                    (user.getEmail() == null ? "" : user.getEmail());
+        } else {
+            identity = "Using PaperNote offline.";
+        }
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(this)
+                .setTitle("Account")
+                .setMessage(identity);
+
+        if (user != null) {
+            builder.setNegativeButton("Sign out", (dialog, which) -> {
+                authManager.signOut(this);
+                getPreferences(MODE_PRIVATE).edit().putBoolean("papernote_offline_mode", false).apply();
+                showWelcome();
+            });
+        }
+
+        builder.setPositiveButton("Close", null).show();
     }
 
     private void addNotebookCard(LinearLayout parent, NotebookStore.NotebookMeta notebook) {
