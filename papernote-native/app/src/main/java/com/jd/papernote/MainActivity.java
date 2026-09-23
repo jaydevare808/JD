@@ -657,10 +657,285 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
                 .show();
     }
 
+
+    private void showStudyTools(View anchor) {
+        PopupMenu menu = new PopupMenu(this, anchor);
+        menu.getMenu().add("Scientific calculator");
+        menu.getMenu().add("Focus timer");
+        menu.getMenu().add("Page checklist");
+        menu.setOnMenuItemClickListener(item -> {
+            switch (item.getTitle().toString()) {
+                case "Scientific calculator":
+                    showCalculator();
+                    return true;
+                case "Focus timer":
+                    showFocusTimer();
+                    return true;
+                case "Page checklist":
+                    showStudyChecklist();
+                    return true;
+                default:
+                    return false;
+            }
+        });
+        menu.show();
+    }
+
+    private void showCalculator() {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(20), dp(8), dp(20), 0);
+
+        EditText expression = new EditText(this);
+        expression.setHint("Example: (12+8)*3/4");
+        expression.setSingleLine(true);
+        expression.setInputType(InputType.TYPE_CLASS_NUMBER
+                | InputType.TYPE_CLASS_PHONE
+                | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        box.addView(expression);
+
+        TextView result = text("Result: ", 18, Color.rgb(23, 32, 51), true);
+        result.setPadding(0, dp(14), 0, dp(8));
+        box.addView(result);
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("Scientific calculator")
+                .setView(box)
+                .setNeutralButton("Clear", null)
+                .setNegativeButton("Close", null)
+                .setPositiveButton("Calculate", null)
+                .create();
+
+        dialog.setOnShowListener(d -> {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+                try {
+                    double value = ExpressionParser.evaluate(expression.getText().toString());
+                    result.setText("Result: " + formatNumber(value));
+                } catch (Exception e) {
+                    result.setText("Result: Invalid expression");
+                }
+            });
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v -> {
+                expression.setText("");
+                result.setText("Result: ");
+            });
+        });
+        dialog.show();
+    }
+
+    private String formatNumber(double value) {
+        if (Math.abs(value - Math.rint(value)) < 1e-10) {
+            return Long.toString(Math.round(value));
+        }
+        return String.format(java.util.Locale.US, "%.10f", value)
+                .replaceAll("0+$", "")
+                .replaceAll("\\\\.$", "");
+    }
+
+    private void showFocusTimer() {
+        final Handler timerHandler = new Handler(Looper.getMainLooper());
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(20), dp(8), dp(20), 0);
+
+        TextView time = text("25:00", 42, Color.rgb(23, 32, 51), true);
+        time.setGravity(Gravity.CENTER);
+        box.addView(time);
+
+        TextView hint = text("Focus on one chapter or problem set. You can stop at any time.", 13, 0xFF667085, false);
+        hint.setPadding(0, dp(8), 0, 0);
+        box.addView(hint);
+
+        final long[] endAt = {0L};
+        final boolean[] running = {false};
+        final Runnable[] tick = new Runnable[1];
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("Focus timer")
+                .setView(box)
+                .setNegativeButton("Close", null)
+                .setPositiveButton("Start", null)
+                .create();
+
+        dialog.setOnDismissListener(d -> timerHandler.removeCallbacks(tick[0]));
+
+        dialog.setOnShowListener(d -> {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+                if (!running[0]) {
+                    endAt[0] = System.currentTimeMillis() + 25L * 60L * 1000L;
+                    running[0] = true;
+                    dialog.getButton(AlertDialog.BUTTON_POSITIVE).setText("Pause");
+                    tick[0] = new Runnable() {
+                        @Override
+                        public void run() {
+                            long remaining = Math.max(0L, endAt[0] - System.currentTimeMillis());
+                            long minutes = remaining / 60000L;
+                            long seconds = (remaining / 1000L) % 60L;
+                            time.setText(String.format(java.util.Locale.US, "%02d:%02d", minutes, seconds));
+                            if (remaining <= 0L) {
+                                running[0] = false;
+                                dialog.getButton(AlertDialog.BUTTON_POSITIVE).setText("Start");
+                                android.media.ToneGenerator tone =
+                                        new android.media.ToneGenerator(android.media.AudioManager.STREAM_NOTIFICATION, 90);
+                                tone.startTone(android.media.ToneGenerator.TONE_PROP_BEEP2, 700);
+                                tone.release();
+                                return;
+                            }
+                            timerHandler.postDelayed(this, 250L);
+                        }
+                    };
+                    timerHandler.post(tick[0]);
+                } else {
+                    long remaining = Math.max(0L, endAt[0] - System.currentTimeMillis());
+                    endAt[0] = System.currentTimeMillis() + remaining;
+                    running[0] = false;
+                    timerHandler.removeCallbacks(tick[0]);
+                    dialog.getButton(AlertDialog.BUTTON_POSITIVE).setText("Start");
+                }
+            });
+        });
+
+        dialog.show();
+    }
+
+    private void showStudyChecklist() {
+        final String[] tasks = {
+                "Review formulas",
+                "Solve 10 practice questions",
+                "Solve 10 MCQs",
+                "Mark difficult questions",
+                "Revise mistakes",
+                "Write a short summary"
+        };
+        boolean[] checked = new boolean[tasks.length];
+
+        new AlertDialog.Builder(this)
+                .setTitle("Study checklist")
+                .setMultiChoiceItems(tasks, checked, (dialog, which, isChecked) -> checked[which] = isChecked)
+                .setNegativeButton("Close", null)
+                .setPositiveButton("Save as page note", (dialog, which) -> {
+                    StringBuilder note = new StringBuilder("Study Checklist\\n");
+                    for (int i = 0; i < tasks.length; i++) {
+                        note.append(checked[i] ? "☑ " : "☐ ").append(tasks[i]).append("\\n");
+                    }
+                    canvasView.addText(
+                            note.toString().trim(),
+                            150f,
+                            180f
+                    );
+                })
+                .show();
+    }
+
+    private static final class ExpressionParser {
+        private final String source;
+        private int index;
+
+        private ExpressionParser(String source) {
+            this.source = source.replace("×", "*")
+                    .replace("÷", "/")
+                    .replace("π", String.valueOf(Math.PI))
+                    .replaceAll("\\\\s+", "");
+        }
+
+        static double evaluate(String source) {
+            if (source == null || source.trim().isEmpty()) throw new IllegalArgumentException();
+            ExpressionParser parser = new ExpressionParser(source);
+            double value = parser.parseExpression();
+            if (parser.index != parser.source.length()) throw new IllegalArgumentException();
+            return value;
+        }
+
+        private double parseExpression() {
+            double value = parseTerm();
+            while (index < source.length()) {
+                char op = source.charAt(index);
+                if (op != '+' && op != '-') break;
+                index++;
+                double rhs = parseTerm();
+                value = op == '+' ? value + rhs : value - rhs;
+            }
+            return value;
+        }
+
+        private double parseTerm() {
+            double value = parsePower();
+            while (index < source.length()) {
+                char op = source.charAt(index);
+                if (op != '*' && op != '/') break;
+                index++;
+                double rhs = parsePower();
+                if (op == '/' && Math.abs(rhs) < 1e-15) throw new ArithmeticException();
+                value = op == '*' ? value * rhs : value / rhs;
+            }
+            return value;
+        }
+
+        private double parsePower() {
+            double base = parseUnary();
+            if (index < source.length() && source.charAt(index) == '^') {
+                index++;
+                base = Math.pow(base, parsePower());
+            }
+            return base;
+        }
+
+        private double parseUnary() {
+            if (index < source.length() && source.charAt(index) == '+') {
+                index++;
+                return parseUnary();
+            }
+            if (index < source.length() && source.charAt(index) == '-') {
+                index++;
+                return -parseUnary();
+            }
+            return parsePrimary();
+        }
+
+        private double parsePrimary() {
+            if (index >= source.length()) throw new IllegalArgumentException();
+
+            if (source.charAt(index) == '(') {
+                index++;
+                double value = parseExpression();
+                if (index >= source.length() || source.charAt(index) != ')') throw new IllegalArgumentException();
+                index++;
+                return value;
+            }
+
+            if (source.startsWith("sqrt(", index)) {
+                index += 5;
+                double value = parseExpression();
+                if (index >= source.length() || source.charAt(index) != ')') throw new IllegalArgumentException();
+                index++;
+                if (value < 0) throw new ArithmeticException();
+                return Math.sqrt(value);
+            }
+
+            int start = index;
+            boolean dot = false;
+            while (index < source.length()) {
+                char ch = source.charAt(index);
+                if (Character.isDigit(ch)) {
+                    index++;
+                } else if (ch == '.' && !dot) {
+                    dot = true;
+                    index++;
+                } else {
+                    break;
+                }
+            }
+            if (start == index) throw new IllegalArgumentException();
+            return Double.parseDouble(source.substring(start, index));
+        }
+    }
+
     private void showMoreMenu(View anchor) {
         PopupMenu menu = new PopupMenu(this, anchor);
         menu.getMenu().add("Rename notebook");
         menu.getMenu().add("Rename page");
+        menu.getMenu().add("Duplicate page");
+        menu.getMenu().add("Delete page");
         menu.getMenu().add("Clear current page");
         menu.getMenu().add("Backup notebook");
         menu.getMenu().add("Restore backup");
@@ -675,6 +950,12 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
                     return true;
                 case "Rename page":
                     renamePage();
+                    return true;
+                case "Duplicate page":
+                    duplicateCurrentPage();
+                    return true;
+                case "Delete page":
+                    confirmDeleteCurrentPage();
                     return true;
                 case "Clear current page":
                     new AlertDialog.Builder(this)
@@ -738,6 +1019,54 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
                         toast("Rename failed");
                     }
                 }).show();
+    }
+
+
+    private void duplicateCurrentPage() {
+        saveCurrentPageNow();
+        NotebookStore.PageMeta original = currentNotebook.pages.get(currentPageIndex);
+        NotebookStore.PageMeta copy = store.addPage(
+                currentNotebook,
+                original.title + " Copy",
+                original.paperType
+        );
+
+        Bitmap image = canvasView.getInkBitmap();
+        if (image != null) {
+            Bitmap bitmapCopy = image.copy(Bitmap.Config.ARGB_8888, false);
+            try {
+                store.savePageBitmap(copy.id, bitmapCopy);
+                bitmapCopy.recycle();
+            } catch (Exception e) {
+                bitmapCopy.recycle();
+                toast("Could not duplicate page");
+                return;
+            }
+        }
+
+        currentPageIndex = currentNotebook.pages.size() - 1;
+        try { store.save(currentNotebook); } catch (Exception ignored) {}
+        loadCurrentPage();
+    }
+
+    private void confirmDeleteCurrentPage() {
+        if (currentNotebook.pages.size() <= 1) {
+            toast("A notebook must keep at least one page");
+            return;
+        }
+
+        new AlertDialog.Builder(this)
+                .setTitle("Delete current page?")
+                .setMessage("This permanently removes the current page from this notebook.")
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Delete", (dialog, which) -> {
+                    saveCurrentPageNow();
+                    store.removePage(currentNotebook, currentPageIndex);
+                    currentPageIndex = Math.min(currentPageIndex, currentNotebook.pages.size() - 1);
+                    try { store.save(currentNotebook); } catch (Exception ignored) {}
+                    loadCurrentPage();
+                })
+                .show();
     }
 
     private void renamePage() {
