@@ -453,7 +453,7 @@ public final class PaperCanvasView extends View {
                     ignoredDown = true;
                     return true;
                 }
-                if (palmShield && isLikelyPalm(event)) {
+                if (palmShield && isLikelyPalm(event, 0)) {
                     ignoredDown = true;
                     return true;
                 }
@@ -540,8 +540,35 @@ public final class PaperCanvasView extends View {
                 return true;
 
             case MotionEvent.ACTION_POINTER_DOWN:
-                // In write mode the first contact owns the stroke. Extra contacts are ignored,
-                // which substantially reduces accidental palm marks with passive capacitive pens.
+                // Passive capacitive styluses are reported as ordinary touch contacts. If a broad
+                // palm contact arrived first, allow a later, small contact to take over as the
+                // writing contact. If a stroke is already active, keep extra contacts ignored.
+                if (activePointerId < 0 && ignoredDown && event.getPointerCount() >= 2) {
+                    int newIndex = event.getActionIndex();
+                    if (newIndex >= 0 && newIndex < event.getPointerCount() && !isLikelyPalm(event, newIndex)) {
+                        activePointerId = event.getPointerId(newIndex);
+                        ignoredDown = false;
+                        drawing = true;
+                        if (tool == TOOL_PEN || tool == TOOL_HIGHLIGHTER || tool == TOOL_ERASER || isShapeTool(tool)) {
+                            beginAction();
+                        }
+                        float[] takeover = screenToPage(event.getX(newIndex), event.getY(newIndex));
+                        lastPageX = takeover[0];
+                        lastPageY = takeover[1];
+
+                        if (tool == TOOL_PEN || tool == TOOL_HIGHLIGHTER || tool == TOOL_ERASER) {
+                            drawDot(takeover[0], takeover[1], event.getPressure(newIndex), event.getToolType(newIndex));
+                            if (soundEngine != null && tool != TOOL_ERASER) soundEngine.tick();
+                        } else if (isShapeTool(tool)) {
+                            shapeStartX = takeover[0];
+                            shapeStartY = takeover[1];
+                            shapeEndX = takeover[0];
+                            shapeEndY = takeover[1];
+                        }
+                        requestDisallowIntercept(true);
+                        invalidate();
+                    }
+                }
                 return true;
 
             case MotionEvent.ACTION_POINTER_UP:
@@ -552,11 +579,12 @@ public final class PaperCanvasView extends View {
         }
     }
 
-    private boolean isLikelyPalm(MotionEvent event) {
-        float major = event.getToolMajor(0);
-        float minor = event.getToolMinor(0);
+    private boolean isLikelyPalm(MotionEvent event, int index) {
+        float major = event.getToolMajor(index);
+        float minor = event.getToolMinor(index);
+        float size = event.getSize(index);
         float threshold = dp(34);
-        return major > threshold || minor > threshold;
+        return major > threshold || minor > threshold || size > 0.36f;
     }
 
     private void drawDot(float x, float y, float pressure, int toolType) {
