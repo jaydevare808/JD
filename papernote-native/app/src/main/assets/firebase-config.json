@@ -1,0 +1,28 @@
+{
+  "project_info": {
+    "project_number": "CHANGE_ME",
+    "project_id": "CHANGE_ME",
+    "storage_bucket": "CHANGE_ME"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "CHANGE_ME",
+        "android_client_info": {
+          "package_name": "com.jd.papernote"
+        }
+      },
+      "api_key": [
+        {
+          "current_key": "CHANGE_ME"
+        }
+      ],
+      "oauth_client": [
+        {
+          "client_id": "CHANGE_ME_WEB_CLIENT_ID",
+          "client_type": 3
+        }
+      ]
+    }
+  ]
+}
