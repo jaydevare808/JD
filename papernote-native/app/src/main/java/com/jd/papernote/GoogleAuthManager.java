@@ -186,7 +186,7 @@ public final class GoogleAuthManager {
                                 activityContext,
                                 signupRequest,
                                 null,
-                                activityContext.getMainExecutor(),
+                                ContextCompat.getMainExecutor(activityContext),
                                 new CredentialManagerCallback<GetCredentialResponse, GetCredentialException>() {
                                     @Override
                                     public void onResult(GetCredentialResponse result) {
