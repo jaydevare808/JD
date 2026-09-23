@@ -71,7 +71,7 @@ public final class GoogleAuthManager {
             if (!FirebaseApp.getApps(appContext).isEmpty()) {
                 app = FirebaseApp.getInstance();
             } else {
-                String json = readAsset("firebase-config.json");
+                String json = readAsset("google-services.json");
                 JSONObject root = new JSONObject(json);
 
                 JSONObject projectInfo = root.getJSONObject("project_info");
