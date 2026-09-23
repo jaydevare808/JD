@@ -84,13 +84,8 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
             }
         }
 
-        GoogleAuthManager authManager = GoogleAuthManager.get(this);
-        boolean offlineMode = getPreferences(MODE_PRIVATE).getBoolean("papernote_offline_mode", false);
-        if (authManager.getCurrentUser() != null || offlineMode) {
-            showHome();
-        } else {
-            showWelcome();
-        }
+        // PaperNote is fully offline-first. No account or sign-in is required.
+        showHome();
         // Stable build: updates are checked manually from the overflow menu.
     }
 
@@ -114,200 +109,6 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
         }
     }
 
-
-    private void showWelcome() {
-        FrameLayout frame = new FrameLayout(this);
-        frame.setBackgroundColor(0xFFF6F8FC);
-
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setGravity(Gravity.CENTER_HORIZONTAL);
-        root.setPadding(dp(26), dp(30), dp(26), dp(24));
-
-        TextView topBadge = text("PAPERNOTE " + BuildConfig.VERSION_NAME + "  •  STABLE BUILD", 10, 0xFF5D6B86, true);
-        topBadge.setGravity(Gravity.CENTER);
-        topBadge.setBackground(rounded(0xFFE9EEFF, 22));
-        LinearLayout.LayoutParams badgeParams = new LinearLayout.LayoutParams(-1, dp(34));
-        root.addView(topBadge, badgeParams);
-
-        Space top = new Space(this);
-        root.addView(top, new LinearLayout.LayoutParams(1, 0, 0.7f));
-
-        TextView logo = text("P", 46, Color.WHITE, true);
-        logo.setGravity(Gravity.CENTER);
-        logo.setBackground(rounded(0xFF536DFE, 26));
-        logo.setElevation(dp(10));
-        root.addView(logo, new LinearLayout.LayoutParams(dp(104), dp(104)));
-
-        TextView title = text("PaperNote", 34, 0xFF182339, true);
-        title.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(-1, -2);
-        titleParams.setMargins(0, dp(18), 0, 0);
-        root.addView(title, titleParams);
-
-        TextView subtitle = text(
-                "Your focused digital notebook for handwritten study.\\nWrite, revise, organize and export without paper.",
-                15, 0xFF667085, false
-        );
-        subtitle.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams subtitleParams = new LinearLayout.LayoutParams(-1, -2);
-        subtitleParams.setMargins(0, dp(7), 0, 0);
-        root.addView(subtitle, subtitleParams);
-
-        LinearLayout featureCard = new LinearLayout(this);
-        featureCard.setOrientation(LinearLayout.VERTICAL);
-        featureCard.setPadding(dp(18), dp(16), dp(18), dp(14));
-        featureCard.setBackground(rounded(Color.WHITE, 20));
-        featureCard.setElevation(dp(3));
-
-        TextView cardTitle = text("Built around your study flow", 16, 0xFF182339, true);
-        featureCard.addView(cardTitle);
-
-        LinearLayout featureRow = new LinearLayout(this);
-        featureRow.setGravity(Gravity.CENTER_VERTICAL);
-        featureRow.setPadding(0, dp(11), 0, 0);
-        addFeature(featureRow, "✍", "Fast handwriting");
-        addFeature(featureRow, "✓", "Auto-save");
-        addFeature(featureRow, "⇩", "PDF + images");
-        featureCard.addView(featureRow);
-
-        LinearLayout.LayoutParams featureParams = new LinearLayout.LayoutParams(-1, -2);
-        featureParams.setMargins(0, dp(22), 0, 0);
-        root.addView(featureCard, featureParams);
-
-        Button google = styledButton("Continue with Google", true);
-        google.setTextSize(15);
-        google.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
-        LinearLayout.LayoutParams googleParams = new LinearLayout.LayoutParams(-1, dp(54));
-        googleParams.setMargins(0, dp(18), 0, dp(10));
-        root.addView(google, googleParams);
-
-        TextView status = text("", 12, 0xFF667085, false);
-        status.setGravity(Gravity.CENTER);
-        root.addView(status);
-
-        Button offline = styledButton("Continue offline", false);
-        offline.setTextSize(14);
-        LinearLayout.LayoutParams offlineParams = new LinearLayout.LayoutParams(-1, dp(50));
-        offlineParams.setMargins(0, dp(10), 0, 0);
-        root.addView(offline, offlineParams);
-
-        TextView footer = text(
-                "Google sign-in syncs account identity. Your current notebook data stays on this device.",
-                11, 0xFF8A93A3, false
-        );
-        footer.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams footerParams = new LinearLayout.LayoutParams(-1, -2);
-        footerParams.setMargins(0, dp(16), 0, 0);
-        root.addView(footer, footerParams);
-
-        Space bottom = new Space(this);
-        root.addView(bottom, new LinearLayout.LayoutParams(1, 0, 1f));
-        frame.addView(root, new FrameLayout.LayoutParams(-1, -1));
-        setContentView(frame);
-
-        GoogleAuthManager authManager = GoogleAuthManager.get(this);
-        if (!authManager.isConfigured()) {
-            google.setEnabled(false);
-            status.setText(authManager.getConfigurationMessage());
-        } else {
-            authManager.consumePendingSignIn(new GoogleAuthManager.Callback() {
-                @Override public void onSuccess(com.google.firebase.auth.FirebaseUser user) {
-                    getPreferences(MODE_PRIVATE)
-                            .edit()
-                            .putBoolean("papernote_offline_mode", false)
-                            .apply();
-                    runOnUiThread(() -> showHome());
-                }
-
-                @Override public void onError(String message) {
-                    // No pending sign-in is normal. Do not interrupt the welcome screen.
-                }
-            });
-        }
-
-        google.setOnClickListener(v -> {
-            google.setEnabled(false);
-            google.setText("Signing in…");
-            status.setText("Waiting for Google account…");
-
-            authManager.signIn(this, new GoogleAuthManager.Callback() {
-                @Override public void onSuccess(com.google.firebase.auth.FirebaseUser user) {
-                    getPreferences(MODE_PRIVATE)
-                            .edit()
-                            .putBoolean("papernote_offline_mode", false)
-                            .apply();
-
-                    runOnUiThread(() -> {
-                        status.setText("Signed in");
-                        google.setText("Continue with Google");
-                        google.setEnabled(true);
-                        showHome();
-                    });
-                }
-
-                @Override public void onError(String message) {
-                    runOnUiThread(() -> {
-                        google.setText("Continue with Google");
-                        google.setEnabled(true);
-                        status.setText(message);
-                        new AlertDialog.Builder(MainActivity.this)
-                                .setTitle("Google sign-in")
-                                .setMessage(message)
-                                .setPositiveButton("OK", null)
-                                .show();
-                    });
-                }
-            });
-        });
-
-        offline.setOnClickListener(v -> {
-            getPreferences(MODE_PRIVATE)
-                    .edit()
-                    .putBoolean("papernote_offline_mode", true)
-                    .apply();
-            showHome();
-        });
-
-        // Staggered entrance animation gives the launch screen a polished, calm feel.
-        View[] animated = {topBadge, logo, title, subtitle, featureCard, google, status, offline, footer};
-        for (int i = 0; i < animated.length; i++) {
-            View view = animated[i];
-            view.setAlpha(0f);
-            view.setTranslationY(dp(18));
-            view.animate()
-                    .alpha(1f)
-                    .translationY(0f)
-                    .setStartDelay(90L + i * 55L)
-                    .setDuration(360L)
-                    .setInterpolator(new android.view.animation.DecelerateInterpolator())
-                    .start();
-        }
-
-        logo.setScaleX(0.72f);
-        logo.setScaleY(0.72f);
-        logo.animate()
-                .scaleX(1f)
-                .scaleY(1f)
-                .setStartDelay(100L)
-                .setDuration(520L)
-                .setInterpolator(new android.view.animation.OvershootInterpolator())
-                .start();
-    }
-
-    private void addFeature(LinearLayout row, String icon, String label) {
-        LinearLayout item = new LinearLayout(this);
-        item.setOrientation(LinearLayout.VERTICAL);
-        item.setGravity(Gravity.CENTER);
-        TextView iconView = text(icon, 18, 0xFF536DFE, true);
-        iconView.setGravity(Gravity.CENTER);
-        item.addView(iconView, new LinearLayout.LayoutParams(-1, dp(26)));
-        TextView labelView = text(label, 10, 0xFF667085, false);
-        labelView.setGravity(Gravity.CENTER);
-        item.addView(labelView);
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, -2, 1f);
-        row.addView(item, params);
-    }
 
     private void showHome() {
         currentNotebook = null;
@@ -334,11 +135,15 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
         brandBox.addView(tagline);
         headerRow.addView(brandBox, new LinearLayout.LayoutParams(0, -2, 1f));
 
-        Button account = toolbarButton("ACCOUNT");
-        account.setTextColor(Color.WHITE);
-        account.setBackground(rounded(0xFF2A3854, 14));
-        account.setOnClickListener(v -> showAccountDialog());
-        headerRow.addView(account);
+        Button about = toolbarButton("ABOUT");
+        about.setTextColor(Color.WHITE);
+        about.setBackground(rounded(0xFF2A3854, 14));
+        about.setOnClickListener(v -> new AlertDialog.Builder(this)
+                .setTitle("About PaperNote")
+                .setMessage("PaperNote is a handwriting-first study notebook.\n\nNo account, Google sign-in, or cloud account is required. Your notebooks stay on this device unless you export a backup.")
+                .setPositiveButton("OK", null)
+                .show());
+        headerRow.addView(about);
 
         header.addView(headerRow);
 
@@ -436,71 +241,6 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
                 .setDuration(320)
                 .setInterpolator(new android.view.animation.DecelerateInterpolator())
                 .start();
-    }
-
-    private void showAccountDialog() {
-        GoogleAuthManager authManager = GoogleAuthManager.get(this);
-        com.google.firebase.auth.FirebaseUser user = authManager.getCurrentUser();
-
-        if (user == null) {
-            AlertDialog dialog = new AlertDialog.Builder(this)
-                    .setTitle("PaperNote account")
-                    .setMessage("You are using PaperNote offline. Sign in with Google to connect this app session to your Firebase account.")
-                    .setNegativeButton("Close", null)
-                    .setPositiveButton("Sign in with Google", null)
-                    .create();
-
-            dialog.setOnShowListener(d -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
-                Button signIn = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
-                signIn.setEnabled(false);
-                signIn.setText("Signing in…");
-
-                authManager.signIn(this, new GoogleAuthManager.Callback() {
-                    @Override public void onSuccess(com.google.firebase.auth.FirebaseUser signedInUser) {
-                        getPreferences(MODE_PRIVATE)
-                                .edit()
-                                .putBoolean("papernote_offline_mode", false)
-                                .apply();
-                        dialog.dismiss();
-                        showHome();
-                    }
-
-                    @Override public void onError(String message) {
-                        signIn.setEnabled(true);
-                        signIn.setText("Sign in with Google");
-                        new AlertDialog.Builder(MainActivity.this)
-                                .setTitle("Google sign-in")
-                                .setMessage(message)
-                                .setPositiveButton("OK", null)
-                                .show();
-                    }
-                });
-            }));
-            dialog.show();
-            return;
-        }
-
-        String identity = "Signed in with Google\\n";
-        if (user.getDisplayName() != null && !user.getDisplayName().trim().isEmpty()) {
-            identity += user.getDisplayName() + "\\n";
-        }
-        if (user.getEmail() != null) {
-            identity += user.getEmail();
-        }
-
-        new AlertDialog.Builder(this)
-                .setTitle("PaperNote account")
-                .setMessage(identity)
-                .setNegativeButton("Sign out", (dialog, which) -> {
-                    authManager.signOut(this);
-                    getPreferences(MODE_PRIVATE)
-                            .edit()
-                            .putBoolean("papernote_offline_mode", false)
-                            .apply();
-                    showWelcome();
-                })
-                .setPositiveButton("Close", null)
-                .show();
     }
 
     private void addNotebookCard(LinearLayout parent, NotebookStore.NotebookMeta notebook) {
