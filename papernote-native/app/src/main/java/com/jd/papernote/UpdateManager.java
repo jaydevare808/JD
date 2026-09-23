@@ -51,25 +51,11 @@ public final class UpdateManager {
                 int remote = versionCode(tag);
                 int local = versionCode(BuildConfig.VERSION_NAME);
 
-                JSONArray assets = release.optJSONArray("assets");
-                String apkUrl = null;
-                long apkSize = 0L;
-                if (assets != null) {
-                    for (int i = 0; i < assets.length(); i++) {
-                        JSONObject asset = assets.getJSONObject(i);
-                        if (APK_NAME.equals(asset.optString("name"))) {
-                            apkUrl = asset.optString("browser_download_url", null);
-                            apkSize = asset.optLong("size", 0L);
-                            break;
-                        }
-                    }
-                }
-
-                if (remote > local && apkUrl != null) {
-                    String finalApkUrl = apkUrl;
-                    long finalApkSize = apkSize;
+                String releaseUrl = release.optString("html_url", "");
+                if (remote > local && releaseUrl != null && !releaseUrl.isEmpty()) {
+                    String finalReleaseUrl = releaseUrl;
                     activity.runOnUiThread(() ->
-                            showUpdateDialog(activity, tag, release.optString("body", ""), finalApkUrl, finalApkSize));
+                            showUpdateDialog(activity, tag, release.optString("body", ""), finalReleaseUrl));
                 } else if (manual) {
                     activity.runOnUiThread(() ->
                             Toast.makeText(activity, "PaperNote is up to date.", Toast.LENGTH_SHORT).show());
