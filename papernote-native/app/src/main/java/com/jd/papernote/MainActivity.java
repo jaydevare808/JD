@@ -428,28 +428,65 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
         GoogleAuthManager authManager = GoogleAuthManager.get(this);
         com.google.firebase.auth.FirebaseUser user = authManager.getCurrentUser();
 
-        String identity;
-        if (user != null) {
-            identity = "Signed in with Google\\n" +
-                    (user.getDisplayName() == null ? "" : user.getDisplayName() + "\\n") +
-                    (user.getEmail() == null ? "" : user.getEmail());
-        } else {
-            identity = "Using PaperNote offline.";
+        if (user == null) {
+            AlertDialog dialog = new AlertDialog.Builder(this)
+                    .setTitle("PaperNote account")
+                    .setMessage("You are using PaperNote offline. Sign in with Google to connect this app session to your Firebase account.")
+                    .setNegativeButton("Close", null)
+                    .setPositiveButton("Sign in with Google", null)
+                    .create();
+
+            dialog.setOnShowListener(d -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+                Button signIn = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
+                signIn.setEnabled(false);
+                signIn.setText("Signing in…");
+
+                authManager.signIn(this, new GoogleAuthManager.Callback() {
+                    @Override public void onSuccess(com.google.firebase.auth.FirebaseUser signedInUser) {
+                        getPreferences(MODE_PRIVATE)
+                                .edit()
+                                .putBoolean("papernote_offline_mode", false)
+                                .apply();
+                        dialog.dismiss();
+                        showHome();
+                    }
+
+                    @Override public void onError(String message) {
+                        signIn.setEnabled(true);
+                        signIn.setText("Sign in with Google");
+                        new AlertDialog.Builder(MainActivity.this)
+                                .setTitle("Google sign-in")
+                                .setMessage(message)
+                                .setPositiveButton("OK", null)
+                                .show();
+                    }
+                });
+            }));
+            dialog.show();
+            return;
         }
 
-        AlertDialog.Builder builder = new AlertDialog.Builder(this)
-                .setTitle("Account")
-                .setMessage(identity);
-
-        if (user != null) {
-            builder.setNegativeButton("Sign out", (dialog, which) -> {
-                authManager.signOut(this);
-                getPreferences(MODE_PRIVATE).edit().putBoolean("papernote_offline_mode", false).apply();
-                showWelcome();
-            });
+        String identity = "Signed in with Google\\n";
+        if (user.getDisplayName() != null && !user.getDisplayName().trim().isEmpty()) {
+            identity += user.getDisplayName() + "\\n";
+        }
+        if (user.getEmail() != null) {
+            identity += user.getEmail();
         }
 
-        builder.setPositiveButton("Close", null).show();
+        new AlertDialog.Builder(this)
+                .setTitle("PaperNote account")
+                .setMessage(identity)
+                .setNegativeButton("Sign out", (dialog, which) -> {
+                    authManager.signOut(this);
+                    getPreferences(MODE_PRIVATE)
+                            .edit()
+                            .putBoolean("papernote_offline_mode", false)
+                            .apply();
+                    showWelcome();
+                })
+                .setPositiveButton("Close", null)
+                .show();
     }
 
     private void addNotebookCard(LinearLayout parent, NotebookStore.NotebookMeta notebook) {
