@@ -565,7 +565,7 @@ public final class PaperCanvasView extends View {
                             shapeEndX = takeover[0];
                             shapeEndY = takeover[1];
                         }
-                        requestDisallowIntercept(true);
+                        if (getParent() != null) getParent().requestDisallowInterceptTouchEvent(true);
                         invalidate();
                     }
                 }
