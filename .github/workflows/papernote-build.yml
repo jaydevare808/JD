@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [papernote-native]
+    branches: [main, papernote-native]
   workflow_dispatch:
 
 jobs:
