@@ -5,8 +5,6 @@
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:statusBarColor">#172033</item>
         <item name="android:navigationBarColor">#172033</item>
-        <!-- Android 15 compatibility for the API 36 stability candidate. Android 16 ignores this opt-out. -->
-        <item name="android:windowOptOutEdgeToEdgeEnforcement">true</item>
         <item name="android:windowActionModeOverlay">true</item>
     </style>
 </resources>
