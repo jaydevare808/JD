@@ -23,20 +23,10 @@ android {
         buildConfig true
     }
 
-    // TEST ONLY: repeatable CI signing key for Firebase device testing.
-    // Replace this with Play App Signing/release signing before production publication.
-    signingConfigs {
-        papernoteTest {
-            storeFile file("../papernote-test.keystore")
-            storePassword "papernote-test"
-            keyAlias "papernote"
-            keyPassword "papernote-test"
-        }
-    }
-
+    // Device-test release candidate. Production Google Play builds will use Play App Signing.
     buildTypes {
         release {
-            signingConfig signingConfigs.papernoteTest
+            signingConfig signingConfigs.debug
             minifyEnabled false
             debuggable false
         }
