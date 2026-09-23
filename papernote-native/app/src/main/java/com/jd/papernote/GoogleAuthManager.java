@@ -22,6 +22,8 @@ import com.google.firebase.auth.AuthCredential;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
 import com.google.firebase.auth.GoogleAuthProvider;
+import com.google.firebase.auth.AuthResult;
+import com.google.firebase.auth.OAuthProvider;
 
 import java.security.SecureRandom;
 import java.util.Base64;
@@ -130,8 +132,11 @@ public final class GoogleAuthManager {
 
                         @Override
                         public void onError(@NonNull GetCredentialException error) {
-                            // Fallback for devices where the explicit SiWG provider
-                            // is unavailable but a normal Google ID credential exists.
+                            // If Credential Manager cannot provide a Google credential
+                            // on this device, use Firebase's hosted Google OAuth flow.
+                            // This is a real sign-in path, not a fake/offline fallback,
+                            // and works even when the device has no usable Google
+                            // Credential Manager provider.
                             requestGoogleIdCredential(activity, true, callback, error);
                         }
                     }
@@ -173,11 +178,7 @@ public final class GoogleAuthManager {
                             if (authorizedOnly) {
                                 requestGoogleIdCredential(activity, false, callback, error);
                             } else {
-                                String message = humanizeCredentialError(previousError);
-                                if (message == null || message.trim().isEmpty()) {
-                                    message = humanizeCredentialError(error);
-                                }
-                                callback.onError(message);
+                                startFirebaseGoogleOAuth(activity, callback, previousError != null ? previousError : error);
                             }
                         }
                     }
@@ -186,9 +187,66 @@ public final class GoogleAuthManager {
             if (authorizedOnly) {
                 requestGoogleIdCredential(activity, false, callback, e);
             } else {
-                callback.onError(humanizeCredentialError(previousError != null ? previousError : e));
+                startFirebaseGoogleOAuth(activity, callback, previousError != null ? previousError : e);
             }
         }
+    }
+
+    private void startFirebaseGoogleOAuth(Activity activity, Callback callback, Exception previousError) {
+        try {
+            OAuthProvider.Builder providerBuilder = OAuthProvider.newBuilder("google.com", auth);
+            providerBuilder.setScopes(java.util.Arrays.asList("email", "profile"));
+            providerBuilder.addCustomParameter("prompt", "select_account");
+
+            auth.startActivityForSignInWithProvider(activity, providerBuilder.build())
+                    .addOnSuccessListener(authResult -> {
+                        FirebaseUser user = authResult.getUser();
+                        if (user != null) {
+                            callback.onSuccess(user);
+                        } else {
+                            callback.onError("Google sign-in completed but Firebase returned no user.");
+                        }
+                    })
+                    .addOnFailureListener(error -> {
+                        String message = humanizeOAuthError(error);
+                        if (message == null || message.trim().isEmpty()) {
+                            message = humanizeCredentialError(previousError);
+                        }
+                        callback.onError(message);
+                    });
+        } catch (RuntimeException e) {
+            callback.onError("Google sign-in could not start. Please check your internet connection and try again: "
+                    + safeMessage(e));
+        }
+    }
+
+    /**
+     * Completes a Firebase-hosted Google OAuth flow if Android recreated the
+     * Activity while Chrome/Custom Tab was open.
+     */
+    public void consumePendingSignIn(Callback callback) {
+        if (auth == null) return;
+        com.google.android.gms.tasks.Task<AuthResult> pending = auth.getPendingAuthResult();
+        if (pending == null) return;
+
+        pending.addOnSuccessListener(authResult -> {
+            FirebaseUser user = authResult.getUser();
+            if (user != null) callback.onSuccess(user);
+            else callback.onError("Google sign-in completed but Firebase returned no user.");
+        }).addOnFailureListener(error -> callback.onError(humanizeOAuthError(error)));
+    }
+
+    private String humanizeOAuthError(Exception error) {
+        String message = safeMessage(error);
+        String lower = message.toLowerCase();
+        if (lower.contains("cancel")) return "Google sign-in was cancelled.";
+        if (lower.contains("network") || lower.contains("timeout")) {
+            return "Google sign-in needs an internet connection. Please try again.";
+        }
+        if (lower.contains("operation-not-allowed") || lower.contains("provider is disabled")) {
+            return "Google sign-in is disabled in Firebase Authentication. Enable the Google provider and try again.";
+        }
+        return "Google sign-in failed: " + message;
     }
 
     private void handleCredential(Credential credential, Callback callback) {
