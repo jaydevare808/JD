@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://jaydevare808.github.io/JD/whythis/sitemap.xml
