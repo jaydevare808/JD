@@ -775,6 +775,14 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
             case "exam": showExamPractice(); break;
             case "experiment": showExperimentTemplate(); break;
             case "link": showConceptThread(); break;
+            case "replay":
+                if (canvasView.isReplaying()) {
+                    canvasView.stopReplaySession();
+                    toast("Replay stopped");
+                } else if (!canvasView.replaySession()) {
+                    toast("Draw something in this session first, then replay it.");
+                }
+                break;
             case "share": shareNotebookBackup(); break;
             case "export": showExportDialog(); break;
             case "calculator": showCalculator(); break;
@@ -794,6 +802,7 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
         menu.getMenu().add("Exam practice  •  timed answer");
         menu.getMenu().add("Science experiment template");
         menu.getMenu().add("Concept thread");
+        menu.getMenu().add("Handwriting replay");
         menu.getMenu().add("Quick-share notebook backup");
         if (examEndAt > 0L) menu.getMenu().add("Stop exam timer");
         menu.setOnMenuItemClickListener(item -> {
@@ -831,6 +840,17 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
             }
             if (title.startsWith("Concept thread")) {
                 showConceptThread();
+                return true;
+            }
+            if ("Handwriting replay".equals(title)) {
+                if (canvasView.isReplaying()) {
+                    canvasView.stopReplaySession();
+                    toast("Replay stopped");
+                } else if (!canvasView.replaySession()) {
+                    toast("Draw something in this session first, then replay it.");
+                } else {
+                    toast("Replaying this session stroke-by-stroke");
+                }
                 return true;
             }
             if (title.startsWith("Quick-share")) {
