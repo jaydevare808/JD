@@ -393,6 +393,7 @@ public final class PaperCanvasView extends View {
         redo.clear();
         clearGhostBitmap();
         stopReplaySession();
+        marksOnlyMode = false;
         resetViewport();
         invalidate();
     }
@@ -477,13 +478,6 @@ public final class PaperCanvasView extends View {
 
     private void applyCommand(EditCommand command) {
         command.apply(new Canvas(inkBitmap));
-    }
-
-    private void rebuildPaperCache() {
-        Bitmap old = paperBitmap;
-        paperBitmap = Bitmap.createBitmap(PAGE_WIDTH, PAGE_HEIGHT, Bitmap.Config.ARGB_8888);
-        drawPaperBackground(new Canvas(paperBitmap), paperType, marginEnabled);
-        if (old != null && !old.isRecycled()) old.recycle();
     }
 
     private void rebuildPaperCache() {
@@ -604,7 +598,7 @@ public final class PaperCanvasView extends View {
             canvas.drawBitmap(ghostBitmap, 0f, 0f, ghostPaint);
         }
 
-        if (!recallMode && inkBitmap != null) {
+        if (!recallMode && !marksOnlyMode && inkBitmap != null) {
             canvas.drawBitmap(inkBitmap, 0f, 0f, bitmapPaint);
         }
 
@@ -752,7 +746,15 @@ public final class PaperCanvasView extends View {
             }
             return true;
         }
-        if (recallMode) return true;
+        if (recallMode || marksOnlyMode) {
+            if (marksOnlyMode && event.getActionMasked() == MotionEvent.ACTION_DOWN
+                    && interactionListener != null) {
+                screenToPage(event.getX(), event.getY(), pagePoint);
+                StudyPin hit = findPinNear(pagePoint[0], pagePoint[1]);
+                if (hit != null) interactionListener.onPinTapped(hit.x, hit.y);
+            }
+            return true;
+        }
         if (!writeMode) return handlePanTouch(event);
         return handleWriteTouch(event);
     }
