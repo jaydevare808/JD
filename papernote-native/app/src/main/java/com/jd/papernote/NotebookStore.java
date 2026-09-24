@@ -173,7 +173,10 @@ public final class NotebookStore {
 
     public void deleteNotebook(NotebookMeta notebook) {
         if (notebook == null) return;
-        for (PageMeta page : notebook.pages) deletePageBitmap(page.id);
+        for (PageMeta page : notebook.pages) {
+            deletePageBitmap(page.id);
+            deletePageGhostSnapshot(page.id);
+        }
         File meta = metadataFile(notebook.id);
         if (meta.exists()) meta.delete();
         removeStudyFeaturesForNotebook(notebook);
