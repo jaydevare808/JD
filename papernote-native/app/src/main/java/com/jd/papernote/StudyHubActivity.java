@@ -17,6 +17,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.TimeZone;
 
 public class StudyHubActivity extends Activity {
     private NotebookStore store;
@@ -159,6 +162,50 @@ public class StudyHubActivity extends Activity {
             content.addView(empty, marginParams(dp(8)));
         }
 
+        TextView recentTitle = text("RECENT STUDY TIMELINE", 12, 0xFF667085, true);
+        content.addView(recentTitle, marginParams(dp(12)));
+
+        ArrayList<ActivityRow> recent = collectRecentActivity(notebooks);
+        if (recent.isEmpty()) {
+            LinearLayout empty = card();
+            empty.addView(text("Your recent study timeline will appear here after you open and work on pages.", 13, 0xFF5B6473, false));
+            content.addView(empty, marginParams(dp(8)));
+        } else {
+            int shownRecent = 0;
+            for (ActivityRow row : recent) {
+                LinearLayout item = card();
+                item.addView(text(row.notebook.title + "  •  " + row.page.title, 14, 0xFF182339, true));
+                item.addView(text(formatDate(row.lastStudiedAt), 12, 0xFF6B7280, false));
+                Button open = button("Open", false);
+                open.setOnClickListener(v -> IntentBuilder.openNotebook(this, row.notebook.id, row.pageIndex));
+                item.addView(open);
+                content.addView(item, marginParams(dp(8)));
+                if (++shownRecent >= 8) break;
+            }
+        }
+
+        TextView linksTitle = text("CONCEPT THREADS", 12, 0xFF667085, true);
+        content.addView(linksTitle, marginParams(dp(12)));
+
+        ArrayList<LinkRow> links = collectLinks(notebooks);
+        if (links.isEmpty()) {
+            LinearLayout empty = card();
+            empty.addView(text("Connect pages from STUDY → Concept thread to build your handwritten concept map.", 13, 0xFF5B6473, false));
+            content.addView(empty, marginParams(dp(8)));
+        } else {
+            int shownLinks = 0;
+            for (LinkRow row : links) {
+                LinearLayout item = card();
+                item.addView(text(row.sourcePage.title + "  ↔  " + row.targetPage.title, 14, 0xFF182339, true));
+                item.addView(text(row.link.label, 12, 0xFF6B7280, false));
+                Button open = button("Open source", false);
+                open.setOnClickListener(v -> IntentBuilder.openNotebook(this, row.notebook.id, row.sourceIndex));
+                item.addView(open);
+                content.addView(item, marginParams(dp(8)));
+                if (++shownLinks >= 8) break;
+            }
+        }
+
         TextView privacy = text(
                 "All Study Hub metrics are kept locally on this device. No account or cloud sync is used.",
                 11, 0xFF7A8495, false
@@ -206,6 +253,52 @@ public class StudyHubActivity extends Activity {
         long hours = totalMinutes / 60;
         long minutes = totalMinutes % 60;
         return String.format(Locale.US, "%dh %02dm", hours, minutes);
+    }
+
+    private String formatDate(long timestamp) {
+        if (timestamp <= 0L) return "Not studied yet";
+        SimpleDateFormat format = new SimpleDateFormat("dd MMM, hh:mm a", Locale.US);
+        format.setTimeZone(TimeZone.getDefault());
+        return format.format(new Date(timestamp));
+    }
+
+    private ArrayList<ActivityRow> collectRecentActivity(List<NotebookStore.NotebookMeta> notebooks) {
+        ArrayList<ActivityRow> rows = new ArrayList<>();
+        for (NotebookStore.NotebookMeta notebook : notebooks) {
+            for (int i = 0; i < notebook.pages.size(); i++) {
+                NotebookStore.PageMeta page = notebook.pages.get(i);
+                long last = store.getPageStats(page.id).lastStudiedAt;
+                if (last > 0L) rows.add(new ActivityRow(notebook, page, i, last));
+            }
+        }
+        rows.sort((a, b) -> Long.compare(b.lastStudiedAt, a.lastStudiedAt));
+        return rows;
+    }
+
+    private ArrayList<LinkRow> collectLinks(List<NotebookStore.NotebookMeta> notebooks) {
+        ArrayList<LinkRow> rows = new ArrayList<>();
+        Map<String, NotebookPageRef> refs = new HashMap<>();
+        for (NotebookStore.NotebookMeta notebook : notebooks) {
+            for (int i = 0; i < notebook.pages.size(); i++) {
+                refs.put(notebook.pages.get(i).id, new NotebookPageRef(notebook, notebook.pages.get(i), i));
+            }
+        }
+        java.util.HashSet<String> seen = new java.util.HashSet<>();
+        for (NotebookStore.NotebookMeta notebook : notebooks) {
+            for (NotebookStore.PageMeta page : notebook.pages) {
+                for (NotebookStore.StudyLink link : store.getStudyLinksForPage(page.id)) {
+                    String key = link.id;
+                    if (!seen.add(key)) continue;
+                    NotebookPageRef source = refs.get(link.sourcePageId);
+                    NotebookPageRef target = refs.get(link.targetPageId);
+                    if (source != null && target != null) {
+                        rows.add(new LinkRow(notebook, source.page, target.page, source.pageIndex, link));
+                    }
+                }
+            }
+        }
+        rows.sort((a, b) -> Long.compare(b.link.createdAt, a.link.createdAt));
+        return rows;
     }
 
     private LinearLayout card() {
@@ -266,6 +359,46 @@ public class StudyHubActivity extends Activity {
             this.page = page;
             this.pageIndex = pageIndex;
             this.mark = mark;
+        }
+    }
+
+    private static final class ActivityRow {
+        final NotebookStore.NotebookMeta notebook;
+        final NotebookStore.PageMeta page;
+        final int pageIndex;
+        final long lastStudiedAt;
+        ActivityRow(NotebookStore.NotebookMeta notebook, NotebookStore.PageMeta page, int pageIndex, long lastStudiedAt) {
+            this.notebook = notebook;
+            this.page = page;
+            this.pageIndex = pageIndex;
+            this.lastStudiedAt = lastStudiedAt;
+        }
+    }
+
+    private static final class NotebookPageRef {
+        final NotebookStore.NotebookMeta notebook;
+        final NotebookStore.PageMeta page;
+        final int pageIndex;
+        NotebookPageRef(NotebookStore.NotebookMeta notebook, NotebookStore.PageMeta page, int pageIndex) {
+            this.notebook = notebook;
+            this.page = page;
+            this.pageIndex = pageIndex;
+        }
+    }
+
+    private static final class LinkRow {
+        final NotebookStore.NotebookMeta notebook;
+        final NotebookStore.PageMeta sourcePage;
+        final NotebookStore.PageMeta targetPage;
+        final int sourceIndex;
+        final NotebookStore.StudyLink link;
+        LinkRow(NotebookStore.NotebookMeta notebook, NotebookStore.PageMeta sourcePage,
+                NotebookStore.PageMeta targetPage, int sourceIndex, NotebookStore.StudyLink link) {
+            this.notebook = notebook;
+            this.sourcePage = sourcePage;
+            this.targetPage = targetPage;
+            this.sourceIndex = sourceIndex;
+            this.link = link;
         }
     }
 
