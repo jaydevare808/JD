@@ -19,6 +19,8 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Deque;
+import java.util.HashSet;
+import java.util.Set;
 
 public final class PaperCanvasView extends View {
     public static final int PAGE_WIDTH = 1536;
@@ -54,6 +56,7 @@ public final class PaperCanvasView extends View {
     public interface InteractionListener {
         void onStrokeStarted(float pageX, float pageY, int tool);
         void onPinPlaced(float pageX, float pageY);
+        void onPinTapped(float pageX, float pageY);
         void onRecallRegionPlaced(float left, float top, float right, float bottom);
     }
 
@@ -86,6 +89,7 @@ public final class PaperCanvasView extends View {
     private SoundEngine soundEngine;
     private List<StudyPin> studyPins = new ArrayList<>();
     private List<NotebookStore.RecallRegion> recallRegions = new ArrayList<>();
+    private final Set<String> revealedRecallRegions = new HashSet<>();
     private final int[] heatmap = new int[48];
     private int studyViewMode = STUDY_VIEW_NORMAL;
     private Bitmap paperBackgroundBitmap;
@@ -190,6 +194,19 @@ public final class PaperCanvasView extends View {
 
     public void setRecallRegions(List<NotebookStore.RecallRegion> regions) {
         this.recallRegions = regions == null ? new ArrayList<>() : new ArrayList<>(regions);
+        revealedRecallRegions.clear();
+        invalidate();
+    }
+
+    public void revealAllRecallRegions() {
+        for (NotebookStore.RecallRegion region : recallRegions) {
+            revealedRecallRegions.add(region.id);
+        }
+        invalidate();
+    }
+
+    public void resetRecallReveals() {
+        revealedRecallRegions.clear();
         invalidate();
     }
 
@@ -780,13 +797,14 @@ public final class PaperCanvasView extends View {
             return;
         }
         for (NotebookStore.RecallRegion region : recallRegions) {
+            if (revealedRecallRegions.contains(region.id)) continue;
             RectF rect = new RectF(region.left, region.top, region.right, region.bottom);
             canvas.drawRoundRect(rect, 18f, 18f, cover);
             Paint label = new Paint(Paint.ANTI_ALIAS_FLAG);
             label.setColor(0xFF7B8493);
             label.setTextSize(22f);
             label.setTypeface(Typeface.DEFAULT_BOLD);
-            String title = region.label == null || region.label.isEmpty() ? "Recall" : region.label;
+            String title = region.label == null || region.label.isEmpty() ? "Tap to reveal" : region.label;
             canvas.drawText(title, rect.left + 18f, rect.top + 34f, label);
         }
     }
@@ -883,7 +901,21 @@ public final class PaperCanvasView extends View {
             return true;
         }
 
-        if (recallMode) return true;
+        if (recallMode) {
+            if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
+                screenToPage(event.getX(), event.getY(), pagePoint);
+                for (NotebookStore.RecallRegion region : recallRegions) {
+                    if (!revealedRecallRegions.contains(region.id)
+                            && region.left <= pagePoint[0] && pagePoint[0] <= region.right
+                            && region.top <= pagePoint[1] && pagePoint[1] <= region.bottom) {
+                        revealedRecallRegions.add(region.id);
+                        invalidate();
+                        return true;
+                    }
+                }
+            }
+            return true;
+        }
         if (!writeMode) return handlePanTouch(event);
         return handleWriteTouch(event);
     }
@@ -936,6 +968,13 @@ public final class PaperCanvasView extends View {
                 if (palmShield && isLikelyPalm(event, 0)) {
                     ignoredDown = true;
                     return true;
+                }
+
+                if (event.getPointerCount() == 1 && !placingPin && !recallMode) {
+                    screenToPage(event.getX(0), event.getY(0), pagePoint);
+                    if (notifyPinTapIfHit(pagePoint[0], pagePoint[1])) {
+                        return true;
+                    }
                 }
 
                 activePointerId = event.getPointerId(0);
@@ -1057,6 +1096,21 @@ public final class PaperCanvasView extends View {
             default:
                 return true;
         }
+    }
+
+    private boolean notifyPinTapIfHit(float pageX, float pageY) {
+        if (studyPins == null || studyPins.isEmpty() || interactionListener == null) return false;
+        float radius = 32f;
+        float radiusSq = radius * radius;
+        for (StudyPin pin : studyPins) {
+            float dx = pin.x - pageX;
+            float dy = pin.y - pageY;
+            if (dx * dx + dy * dy <= radiusSq) {
+                interactionListener.onPinTapped(pageX, pageY);
+                return true;
+            }
+        }
+        return false;
     }
 
     private void beginLiveOrShapeAction(float screenX, float screenY) {
