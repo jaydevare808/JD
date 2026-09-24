@@ -1210,7 +1210,7 @@ public final class PaperCanvasView extends View {
                 canvas.drawLine(0, y, PAGE_WIDTH, y, grid);
             }
         } else if (PAPER_EXAM_2.equals(type) || PAPER_EXAM_3.equals(type) || PAPER_EXAM_4.equals(type)) {
-            for (int y = 118; y < PAGE_HEIGHT; y += 70) {
+            for (int y = 205; y < PAGE_HEIGHT; y += 70) {
                 canvas.drawLine(132, y, PAGE_WIDTH - 70, y, grid);
             }
             Paint header = new Paint(Paint.ANTI_ALIAS_FLAG);
