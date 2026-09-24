@@ -73,6 +73,7 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
     private long examEndAt = 0L;
     private String pendingPinType;
     private String pendingPinNote;
+    private int pendingReviewDays = 0;
     private long lastFeatureActivityFlushAt = 0L;
     private int pendingFeatureStrokes = 0;
     private int pendingFeatureHeatX = 0;
@@ -351,9 +352,13 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
         saveLabel.setBackground(rounded(0xFF26334D, 18));
         header.addView(saveLabel, new LinearLayout.LayoutParams(dp(68), dp(34)));
 
-        Button workspace = toolbarButton("TOOLS");
-        workspace.setOnClickListener(v -> startActivity(new Intent(this, StudyToolsActivity.class)));
-        header.addView(workspace, new LinearLayout.LayoutParams(dp(62), dp(44)));
+        Button workspace = toolbarButton("STUDY");
+        workspace.setOnClickListener(v -> openStudyWorkspace());
+        header.addView(workspace, new LinearLayout.LayoutParams(dp(66), dp(44)));
+
+        Button view = toolbarButton("VIEW");
+        view.setOnClickListener(v -> showViewMenu(view));
+        header.addView(view, new LinearLayout.LayoutParams(dp(58), dp(44)));
 
         Button more = toolbarButton("⋮");
         more.setTextSize(22);
@@ -417,7 +422,7 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
         redo.setOnClickListener(v -> canvasView.redo());
         tools.addView(redo);
 
-        Button study = toolbarButton("STUDY");
+        Button study = toolbarButton("TOOLS");
         study.setOnClickListener(v -> showStudyTools(study));
         tools.addView(study);
 
@@ -503,6 +508,11 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
             @Override
             public void onPinPlaced(float pageX, float pageY) {
                 placePendingStudyMark(pageX, pageY);
+            }
+
+            @Override
+            public void onPinTapped(float pageX, float pageY) {
+                showStudyMarkAt(pageX, pageY);
             }
         });
         canvasFrame.addView(canvasView, new FrameLayout.LayoutParams(-1, -1));
@@ -769,8 +779,14 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
             case "inbox": showStudyInbox(); break;
             case "analytics": showPageAnalytics(); break;
             case "recall":
+                canvasView.setMarksOnlyMode(false);
                 canvasView.setRecallMode(!canvasView.isRecallMode());
                 toast(canvasView.isRecallMode() ? "Recall cover active" : "Recall page revealed");
+                break;
+            case "marks_view":
+                canvasView.setRecallMode(false);
+                canvasView.setMarksOnlyMode(true);
+                toast("Marks-only view. Tap a marker to inspect it.");
                 break;
             case "ghost": showGhostPageMenu(); break;
             case "exam": showExamPractice(); break;
@@ -791,6 +807,32 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
             case "checklist": showStudyChecklist(); break;
             default: showStudyTools(null); break;
         }
+    }
+
+    private void openStudyWorkspace() {
+        if (currentNotebook == null) return;
+        Intent intent = new Intent(this, StudyWorkspaceActivity.class);
+        intent.putExtra("notebook_id", currentNotebook.id);
+        startActivity(intent);
+    }
+
+    private void showViewMenu(View anchor) {
+        boolean recall = canvasView != null && canvasView.isRecallMode();
+        boolean marksOnly = canvasView != null && canvasView.isMarksOnlyMode();
+        String[] options = {"Normal", "Recall cover", "Marks only"};
+        int checked = recall ? 1 : marksOnly ? 2 : 0;
+        new AlertDialog.Builder(this)
+                .setTitle("Page view")
+                .setSingleChoiceItems(options, checked, (dialog, which) -> {
+                    canvasView.setRecallMode(which == 1);
+                    canvasView.setMarksOnlyMode(which == 2);
+                    if (which == 0) toast("Normal view");
+                    else if (which == 1) toast("Recall cover active");
+                    else toast("Marks-only view. Tap a marker to inspect it.");
+                    dialog.dismiss();
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
     }
 
     private void showStudyTools(View anchor) {
@@ -888,22 +930,42 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
     }
 
     private void requestStudyMark(String type) {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(8), dp(2), dp(8), 0);
+
         EditText note = new EditText(this);
-        note.setHint("Optional note, e.g. Why does current fall here?");
+        note.setHint("Optional note");
         note.setSingleLine(false);
         note.setMinLines(2);
         note.setPadding(dp(8), dp(5), dp(8), dp(5));
+        box.addView(note);
+
+        EditText reviewDays = new EditText(this);
+        reviewDays.setHint("Review after days (0 = today)");
+        reviewDays.setSingleLine(true);
+        reviewDays.setInputType(InputType.TYPE_CLASS_NUMBER);
+        box.addView(reviewDays);
 
         AlertDialog dialog = new AlertDialog.Builder(this)
                 .setTitle("Add " + studyTypeLabel(type).toLowerCase(Locale.ROOT))
-                .setView(note)
+                .setView(box)
                 .setNegativeButton("Cancel", null)
                 .setPositiveButton("Place on page", null)
                 .create();
 
         dialog.setOnShowListener(d -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+            int days;
+            try {
+                String raw = reviewDays.getText().toString().trim();
+                days = raw.isEmpty() ? 0 : Math.max(0, Math.min(365, Integer.parseInt(raw)));
+            } catch (Exception e) {
+                toast("Review days must be a whole number");
+                return;
+            }
             pendingPinType = type;
             pendingPinNote = note.getText().toString().trim();
+            pendingReviewDays = days;
             dialog.dismiss();
             canvasView.beginPinPlacement();
             toast("Tap the exact spot on the page.");
@@ -915,10 +977,14 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
         if (pendingPinType == null || currentNotebook == null) return;
         try {
             String pageId = currentNotebook.pages.get(currentPageIndex).id;
-            store.addStudyMark(pageId, pendingPinType, pageX, pageY, pendingPinNote);
-            toast(studyTypeLabel(pendingPinType) + " pinned");
+            long reviewAt = System.currentTimeMillis() +
+                    pendingReviewDays * 24L * 60L * 60L * 1000L;
+            store.addStudyMark(pageId, pendingPinType, pageX, pageY, pendingPinNote, reviewAt);
+            toast(studyTypeLabel(pendingPinType) + " pinned" +
+                    (pendingReviewDays == 0 ? " • due today" : " • review in " + pendingReviewDays + " days"));
             pendingPinType = null;
             pendingPinNote = null;
+            pendingReviewDays = 0;
             refreshStudyPins();
         } catch (Exception e) {
             toast("Could not place study mark");
@@ -953,6 +1019,75 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
         if (NotebookStore.StudyMark.MISTAKE.equals(type)) return "Mistake";
         if (NotebookStore.StudyMark.IMPORTANT.equals(type)) return "Important";
         return "Revise";
+    }
+
+    private void showStudyMarkAt(float pageX, float pageY) {
+        if (currentNotebook == null || currentNotebook.pages.isEmpty()) return;
+        String pageId = currentNotebook.pages.get(currentPageIndex).id;
+        NotebookStore.StudyMark closest = null;
+        float best = 45f * 45f;
+        for (NotebookStore.StudyMark mark : store.getStudyMarks(pageId)) {
+            float dx = mark.x - pageX;
+            float dy = mark.y - pageY;
+            float distance = dx * dx + dy * dy;
+            if (distance <= best) {
+                best = distance;
+                closest = mark;
+            }
+        }
+        if (closest == null) {
+            toast("No study marker at this spot");
+            return;
+        }
+        final NotebookStore.StudyMark marker = closest;
+        String dueText = marker.reviewAt <= System.currentTimeMillis()
+                ? "Due now"
+                : "Review " + new java.text.SimpleDateFormat("dd MMM, hh:mm a", Locale.US)
+                .format(new java.util.Date(marker.reviewAt));
+        new AlertDialog.Builder(this)
+                .setTitle(studyTypeLabel(marker.type) + (marker.resolved ? " • resolved" : ""))
+                .setMessage((marker.note == null || marker.note.isEmpty() ? "No note." : marker.note)
+                        + "\n\n" + dueText)
+                .setNeutralButton(marker.resolved ? "Reopen" : "Resolve", (d, w) -> {
+                    try {
+                        store.setStudyMarkResolved(pageId, marker.id, !marker.resolved);
+                        refreshStudyPins();
+                    } catch (Exception e) {
+                        toast("Could not update marker");
+                    }
+                })
+                .setNegativeButton("Delete", (d, w) -> {
+                    try {
+                        store.deleteStudyMark(pageId, marker.id);
+                        refreshStudyPins();
+                    } catch (Exception e) {
+                        toast("Could not delete marker");
+                    }
+                })
+                .setPositiveButton("Schedule", (d, w) -> showRescheduleDialog(pageId, marker))
+                .show();
+    }
+
+    private void showRescheduleDialog(String pageId, NotebookStore.StudyMark marker) {
+        EditText days = new EditText(this);
+        days.setHint("Days from now");
+        days.setSingleLine(true);
+        days.setInputType(InputType.TYPE_CLASS_NUMBER);
+        new AlertDialog.Builder(this)
+                .setTitle("Schedule review")
+                .setView(days)
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Save", (d, w) -> {
+                    try {
+                        int value = Math.max(0, Math.min(3650,
+                                Integer.parseInt(days.getText().toString().trim())));
+                        store.rescheduleStudyMark(pageId, marker.id,
+                                System.currentTimeMillis() + value * 24L * 60L * 60L * 1000L);
+                        showStudyInbox();
+                    } catch (Exception e) {
+                        toast("Enter a valid whole number");
+                    }
+                }).show();
     }
 
     private void showStudyInbox() {
@@ -1362,9 +1497,7 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
         int count = pendingFeatureStrokes;
         int avgX = pendingFeatureHeatSamples == 0 ? 0 : pendingFeatureHeatX / pendingFeatureHeatSamples;
         int avgY = pendingFeatureHeatSamples == 0 ? 0 : pendingFeatureHeatY / pendingFeatureHeatSamples;
-        for (int i = 0; i < count; i++) {
-            store.recordStroke(pageId, avgX, avgY);
-        }
+        store.recordStrokeBatch(pageId, count, avgX, avgY);
         pendingFeatureStrokes = 0;
         pendingFeatureHeatX = pendingFeatureHeatY = pendingFeatureHeatSamples = 0;
     }

@@ -207,8 +207,8 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
         LinearLayout studyRow = new LinearLayout(this);
         studyRow.setGravity(Gravity.CENTER_VERTICAL);
 
-        Button toolsButton = styledButton("Study Tools", true);
-        toolsButton.setOnClickListener(v -> startActivity(new Intent(this, StudyToolsActivity.class)));
+        Button toolsButton = styledButton("Study Workspace", true);
+        toolsButton.setOnClickListener(v -> startActivity(new Intent(this, StudyWorkspaceActivity.class)));
         studyRow.addView(toolsButton, new LinearLayout.LayoutParams(0, dp(46), 1f));
 
         Button hubButton = styledButton("Study Hub", false);
@@ -219,7 +219,7 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
 
         studySection.addView(studyRow);
         TextView featureHint = text(
-                "Study Tools: marks • recall • ghost compare • exam practice • experiment pages • analytics • utilities",
+                "Doubts • mistakes • recall • marks-only • ghost compare • exam practice • experiments • analytics • replay",
                 11, 0xFF6B7280, false
         );
         featureHint.setPadding(dp(2), dp(7), dp(2), 0);

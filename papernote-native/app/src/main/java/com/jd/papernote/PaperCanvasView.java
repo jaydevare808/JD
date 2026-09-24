@@ -50,6 +50,7 @@ public final class PaperCanvasView extends View {
     public interface InteractionListener {
         void onStrokeStarted(float pageX, float pageY, int tool);
         void onPinPlaced(float pageX, float pageY);
+        void onPinTapped(float pageX, float pageY);
     }
 
     public static final class StudyPin {
@@ -76,6 +77,7 @@ public final class PaperCanvasView extends View {
 
     private Bitmap inkBitmap;
     private Bitmap baseBitmap;
+    private Bitmap paperBitmap;
     private Listener listener;
     private InteractionListener interactionListener;
     private SoundEngine soundEngine;
@@ -83,8 +85,10 @@ public final class PaperCanvasView extends View {
     private Bitmap ghostBitmap;
     private float ghostAlpha = 0f;
     private boolean recallMode = false;
+    private boolean marksOnlyMode = false;
     private boolean placingPin = false;
     private boolean replaying = false;
+    private long replayDelayMs = 55L;
     private Bitmap replayFinalBitmap;
     private int replayIndex = 0;
     private Runnable replayRunnable;
@@ -130,6 +134,8 @@ public final class PaperCanvasView extends View {
 
     public PaperCanvasView(Context context) {
         super(context);
+
+        rebuildPaperCache();
 
         // Keep the View hardware accelerated. The old implementation forced a software
         // layer, which made live handwriting feel slow on tablets. Commands are rasterized
@@ -201,6 +207,26 @@ public final class PaperCanvasView extends View {
         return recallMode;
     }
 
+    public void setMarksOnlyMode(boolean enabled) {
+        marksOnlyMode = enabled;
+        cancelLiveStroke();
+        writeMode = false;
+        invalidate();
+    }
+
+    public boolean isMarksOnlyMode() {
+        return marksOnlyMode;
+    }
+
+    public void setReplaySpeed(float speed) {
+        float safe = Math.max(0.25f, Math.min(4f, speed));
+        replayDelayMs = Math.round(55f / safe);
+    }
+
+    public float getReplaySpeed() {
+        return 55f / Math.max(1L, replayDelayMs);
+    }
+
     public void centerOnPagePoint(float pageX, float pageY) {
         writeMode = false;
         zoom = 1.65f;
@@ -245,7 +271,7 @@ public final class PaperCanvasView extends View {
                 }
                 replayIndex++;
                 invalidate();
-                postDelayed(this, 55L);
+                postDelayed(this, replayDelayMs);
             }
         };
         post(replayRunnable);
@@ -330,11 +356,13 @@ public final class PaperCanvasView extends View {
 
     public void setMarginEnabled(boolean enabled) {
         marginEnabled = enabled;
+        rebuildPaperCache();
         invalidate();
     }
 
     public void setPaperType(String type) {
         paperType = type == null ? PAPER_RULED : type;
+        rebuildPaperCache();
         invalidate();
     }
 
@@ -365,6 +393,7 @@ public final class PaperCanvasView extends View {
         redo.clear();
         clearGhostBitmap();
         stopReplaySession();
+        marksOnlyMode = false;
         resetViewport();
         invalidate();
     }
@@ -451,6 +480,30 @@ public final class PaperCanvasView extends View {
         command.apply(new Canvas(inkBitmap));
     }
 
+    private void rebuildPaperCache() {
+        Bitmap old = paperBitmap;
+        paperBitmap = Bitmap.createBitmap(PAGE_WIDTH, PAGE_HEIGHT, Bitmap.Config.ARGB_8888);
+        drawPaperBackground(new Canvas(paperBitmap), paperType, marginEnabled);
+        if (old != null && !old.isRecycled()) old.recycle();
+    }
+
+    private StudyPin findPinNear(float x, float y) {
+        if (studyPins == null) return null;
+        final float threshold = 42f;
+        StudyPin nearest = null;
+        float best = threshold * threshold;
+        for (StudyPin pin : studyPins) {
+            float dx = pin.x - x;
+            float dy = pin.y - y;
+            float d2 = dx * dx + dy * dy;
+            if (d2 <= best) {
+                best = d2;
+                nearest = pin;
+            }
+        }
+        return nearest;
+    }
+
     private void rebuildFromBase() {
         if (baseBitmap == null) return;
         Bitmap rebuilt = baseBitmap.copy(Bitmap.Config.ARGB_8888, true);
@@ -475,6 +528,15 @@ public final class PaperCanvasView extends View {
 
     private void notifyDirty() {
         if (listener != null) listener.onCanvasDirty();
+    }
+
+    @Override
+    protected void onDetachedFromWindow() {
+        stopReplaySession();
+        cancelLiveStroke();
+        if (paperBitmap != null && !paperBitmap.isRecycled()) paperBitmap.recycle();
+        paperBitmap = null;
+        super.onDetachedFromWindow();
     }
 
     @Override
@@ -524,7 +586,11 @@ public final class PaperCanvasView extends View {
         canvas.translate(pageRect.left, pageRect.top);
         canvas.scale(scale, scale);
 
-        drawPaperBackground(canvas, paperType, marginEnabled);
+        if (paperBitmap != null && !paperBitmap.isRecycled()) {
+            canvas.drawBitmap(paperBitmap, 0f, 0f, bitmapPaint);
+        } else {
+            drawPaperBackground(canvas, paperType, marginEnabled);
+        }
 
         if (!recallMode && ghostBitmap != null && !ghostBitmap.isRecycled() && ghostAlpha > 0f) {
             Paint ghostPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
@@ -532,7 +598,7 @@ public final class PaperCanvasView extends View {
             canvas.drawBitmap(ghostBitmap, 0f, 0f, ghostPaint);
         }
 
-        if (!recallMode && inkBitmap != null) {
+        if (!recallMode && !marksOnlyMode && inkBitmap != null) {
             canvas.drawBitmap(inkBitmap, 0f, 0f, bitmapPaint);
         }
 
@@ -680,7 +746,15 @@ public final class PaperCanvasView extends View {
             }
             return true;
         }
-        if (recallMode) return true;
+        if (recallMode || marksOnlyMode) {
+            if (marksOnlyMode && event.getActionMasked() == MotionEvent.ACTION_DOWN
+                    && interactionListener != null) {
+                screenToPage(event.getX(), event.getY(), pagePoint);
+                StudyPin hit = findPinNear(pagePoint[0], pagePoint[1]);
+                if (hit != null) interactionListener.onPinTapped(hit.x, hit.y);
+            }
+            return true;
+        }
         if (!writeMode) return handlePanTouch(event);
         return handleWriteTouch(event);
     }
