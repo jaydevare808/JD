@@ -79,6 +79,7 @@ public final class NotebookStore {
         public int strokes;
         public long activeMs;
         public long lastActivityAt;
+        public long lastStudiedAt;
         public final int[] heatmap = new int[48];
 
         public PageStats copy() {
@@ -86,6 +87,7 @@ public final class NotebookStore {
             copy.strokes = strokes;
             copy.activeMs = activeMs;
             copy.lastActivityAt = lastActivityAt;
+            copy.lastStudiedAt = lastStudiedAt;
             System.arraycopy(heatmap, 0, copy.heatmap, 0, heatmap.length);
             return copy;
         }
@@ -370,6 +372,7 @@ public final class NotebookStore {
             JSONObject stats = ensureStatsObject(pageId);
             PageStats value = parsePageStats(stats);
             value.lastActivityAt = System.currentTimeMillis();
+            value.lastStudiedAt = value.lastActivityAt;
             writePageStats(stats, value);
             saveStudyRoot();
         } catch (Exception ignored) {
@@ -386,6 +389,7 @@ public final class NotebookStore {
                 value.activeMs += Math.min(delta, 15000L);
             }
             value.lastActivityAt = now;
+            value.lastStudiedAt = now;
             writePageStats(statsObject, value);
             saveStudyRoot();
         } catch (Exception ignored) {
@@ -402,6 +406,7 @@ public final class NotebookStore {
                 value.activeMs += Math.min(delta, 15000L);
             }
             value.lastActivityAt = 0L;
+            value.lastStudiedAt = now;
             writePageStats(statsObject, value);
             saveStudyRoot();
         } catch (Exception ignored) {
@@ -700,6 +705,7 @@ public final class NotebookStore {
             item.put("strokes", 0);
             item.put("activeMs", 0L);
             item.put("lastActivityAt", 0L);
+            item.put("lastStudiedAt", 0L);
             JSONArray heat = new JSONArray();
             for (int i = 0; i < 48; i++) heat.put(0);
             item.put("heatmap", heat);
@@ -714,6 +720,7 @@ public final class NotebookStore {
         result.strokes = item.optInt("strokes", 0);
         result.activeMs = item.optLong("activeMs", 0L);
         result.lastActivityAt = item.optLong("lastActivityAt", 0L);
+        result.lastStudiedAt = item.optLong("lastStudiedAt", 0L);
         JSONArray heat = item.optJSONArray("heatmap");
         if (heat != null) {
             for (int i = 0; i < Math.min(48, heat.length()); i++) result.heatmap[i] = heat.optInt(i, 0);
@@ -725,6 +732,7 @@ public final class NotebookStore {
         item.put("strokes", value.strokes);
         item.put("activeMs", value.activeMs);
         item.put("lastActivityAt", value.lastActivityAt);
+        item.put("lastStudiedAt", value.lastStudiedAt);
         JSONArray heat = new JSONArray();
         for (int v : value.heatmap) heat.put(v);
         item.put("heatmap", heat);
