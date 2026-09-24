@@ -98,6 +98,7 @@ public class StudyToolsActivity extends Activity {
         addFeature(content, "Ghost compare", "Capture a page snapshot and compare your current page with an earlier version.", "ghost");
         addFeature(content, "Page analytics", "See active time, stroke count and a page-area writing heatmap.", "analytics");
         addFeature(content, "Concept thread", "Connect two pages with a named concept relationship.", "link");
+        addFeature(content, "Handwriting replay", "Replay the current editing session stroke-by-stroke without losing the saved page.", "replay");
         addFeature(content, "Exam practice", "Create a 2-, 3- or 4-mark answer page with a real countdown timer.", "exam");
         addFeature(content, "Science experiment", "Create a structured lab page with Aim, Apparatus, Procedure and Result sections.", "experiment");
 
