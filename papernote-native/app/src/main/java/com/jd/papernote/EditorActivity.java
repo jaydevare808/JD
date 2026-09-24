@@ -847,10 +847,6 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
             case "calculator": showCalculator(); break;
             case "timer": showFocusTimer(); break;
             case "checklist": showStudyChecklist(); break;
-            case "recall_regions": showRecallTools(); break;
-            case "study_views": showStudyViewMenu(); break;
-            case "security": showNotebookSecurity(); break;
-            case "paper_bridge": showPaperBridge(); break;
             default: showStudyTools(null); break;
         }
     }
@@ -1847,6 +1843,13 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
             canvasView.setWriteMode(true);
             canvasView.setTool(PaperCanvasView.TOOL_PEN);
         }
+    }
+
+    private String formatExamTime(long totalSeconds) {
+        long safe = Math.max(0L, totalSeconds);
+        long minutes = safe / 60L;
+        long seconds = safe % 60L;
+        return String.format(Locale.US, "%02d:%02d", minutes, seconds);
     }
 
     private void stopExamTimer(boolean keepMessage) {
