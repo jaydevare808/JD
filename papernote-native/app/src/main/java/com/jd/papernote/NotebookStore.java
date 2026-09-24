@@ -633,7 +633,9 @@ public final class NotebookStore {
             JSONObject statsOut = new JSONObject();
             JSONObject stats = studyRoot.optJSONObject("stats");
             if (stats != null) {
-                for (String key : stats.keySet()) {
+                java.util.Iterator<String> keys = stats.keys();
+                while (keys.hasNext()) {
+                    String key = keys.next();
                     if (!pageIds.contains(key)) statsOut.put(key, stats.optJSONObject(key));
                 }
             }
