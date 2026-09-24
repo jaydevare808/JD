@@ -705,8 +705,9 @@ public final class NotebookStore {
             JSONObject statsObject = ensureStatsObject(pageId);
             PageStats value = parsePageStats(statsObject);
             long now = System.currentTimeMillis();
+            long delta = 0L;
             if (value.lastActivityAt > 0L) {
-                long delta = Math.max(0L, now - value.lastActivityAt);
+                delta = Math.max(0L, now - value.lastActivityAt);
                 value.activeMs += Math.min(delta, 15000L);
             }
             value.lastActivityAt = 0L;
