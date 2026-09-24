@@ -88,6 +88,9 @@ public final class PaperCanvasView extends View {
     private List<NotebookStore.RecallRegion> recallRegions = new ArrayList<>();
     private final int[] heatmap = new int[48];
     private int studyViewMode = STUDY_VIEW_NORMAL;
+    private Bitmap paperBackgroundBitmap;
+    private String paperBackgroundType;
+    private boolean paperBackgroundMargin;
     private Bitmap ghostBitmap;
     private float ghostAlpha = 0f;
     private boolean recallMode = false;
@@ -377,12 +380,17 @@ public final class PaperCanvasView extends View {
     }
 
     public void setMarginEnabled(boolean enabled) {
+        if (marginEnabled == enabled) return;
         marginEnabled = enabled;
+        invalidatePaperBackground();
         invalidate();
     }
 
     public void setPaperType(String type) {
-        paperType = type == null ? PAPER_RULED : type;
+        String next = type == null ? PAPER_RULED : type;
+        if (next.equals(paperType)) return;
+        paperType = next;
+        invalidatePaperBackground();
         invalidate();
     }
 
@@ -546,6 +554,39 @@ public final class PaperCanvasView extends View {
         panY = 0f;
     }
 
+    private void invalidatePaperBackground() {
+        if (paperBackgroundBitmap != null && !paperBackgroundBitmap.isRecycled()) {
+            paperBackgroundBitmap.recycle();
+        }
+        paperBackgroundBitmap = null;
+        paperBackgroundType = null;
+    }
+
+    private Bitmap ensurePaperBackground() {
+        if (paperBackgroundBitmap != null && !paperBackgroundBitmap.isRecycled()
+                && paperType.equals(paperBackgroundType)
+                && marginEnabled == paperBackgroundMargin) {
+            return paperBackgroundBitmap;
+        }
+
+        invalidatePaperBackground();
+        paperBackgroundBitmap = Bitmap.createBitmap(
+                PAGE_WIDTH, PAGE_HEIGHT, Bitmap.Config.ARGB_8888);
+        Canvas bgCanvas = new Canvas(paperBackgroundBitmap);
+        drawPaperBackground(bgCanvas, paperType, marginEnabled);
+        paperBackgroundType = paperType;
+        paperBackgroundMargin = marginEnabled;
+        return paperBackgroundBitmap;
+    }
+
+    @Override
+    protected void onDetachedFromWindow() {
+        stopReplaySession();
+        clearGhostBitmap();
+        invalidatePaperBackground();
+        super.onDetachedFromWindow();
+    }
+
     private float currentScale() {
         return baseScale * (writeMode ? 1f : zoom);
     }
@@ -572,7 +613,8 @@ public final class PaperCanvasView extends View {
         canvas.translate(pageRect.left, pageRect.top);
         canvas.scale(scale, scale);
 
-        drawPaperBackground(canvas, paperType, marginEnabled);
+        Bitmap background = ensurePaperBackground();
+        canvas.drawBitmap(background, 0f, 0f, bitmapPaint);
 
         if (studyViewMode != STUDY_VIEW_MARKS && ghostBitmap != null && !ghostBitmap.isRecycled() && ghostAlpha > 0f) {
             Paint ghostPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
