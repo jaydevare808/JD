@@ -367,8 +367,8 @@ public final class NotebookStore {
         if (!hasNotebookPin(notebook) || pin == null) return false;
         try {
             byte[] salt = android.util.Base64.decode(notebook.pinSalt, android.util.Base64.NO_WRAP);
-            byte[] candidate = hexToBytes(hashPin(pin, salt));
-            byte[] expected = hexToBytes(notebook.pinHash);
+            byte[] candidate = decodeHash(hashPin(pin, salt));
+            byte[] expected = decodeHash(notebook.pinHash);
             return candidate.length == expected.length &&
                     java.security.MessageDigest.isEqual(candidate, expected);
         } catch (Exception ignored) {
@@ -377,23 +377,24 @@ public final class NotebookStore {
     }
 
     private static String hashPin(String pin, byte[] salt) throws Exception {
-        java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
-        digest.update(salt);
-        digest.update(pin.getBytes(StandardCharsets.UTF_8));
-        byte[] value = digest.digest();
-        StringBuilder out = new StringBuilder(value.length * 2);
-        for (byte b : value) out.append(String.format(java.util.Locale.US, "%02x", b & 0xff));
-        return out.toString();
+        javax.crypto.spec.PBEKeySpec spec =
+                new javax.crypto.spec.PBEKeySpec(pin.toCharArray(), salt, 120000, 256);
+        try {
+            javax.crypto.SecretKeyFactory factory =
+                    javax.crypto.SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256");
+            byte[] derived = factory.generateSecret(spec).getEncoded();
+            return android.util.Base64.encodeToString(derived, android.util.Base64.NO_WRAP);
+        } finally {
+            spec.clearPassword();
+        }
     }
 
-    private static byte[] hexToBytes(String hex) {
-        int len = hex == null ? 0 : hex.length();
-        if ((len & 1) != 0) return new byte[0];
-        byte[] out = new byte[len / 2];
-        for (int i = 0; i < out.length; i++) {
-            out[i] = (byte) Integer.parseInt(hex.substring(i * 2, i * 2 + 2), 16);
+    private static byte[] decodeHash(String value) {
+        try {
+            return android.util.Base64.decode(value, android.util.Base64.NO_WRAP);
+        } catch (Exception ignored) {
+            return new byte[0];
         }
-        return out;
     }
 
     public synchronized List<RecallRegion> getRecallRegions(String pageId) {
@@ -478,7 +479,8 @@ public final class NotebookStore {
                     if (item != null && key.equals(item.optString("date"))) {
                         value.activeMs = item.optLong("activeMs", 0L);
                         value.strokes = item.optInt("strokes", 0);
-                        value.pages = item.optInt("pages", 0);
+                        JSONArray pageIds = item.optJSONArray("pageIds");
+                        value.pages = pageIds != null ? pageIds.length() : item.optInt("pages", 0);
                         break;
                     }
                 }
@@ -512,11 +514,27 @@ public final class NotebookStore {
             target.put("activeMs", 0L);
             target.put("strokes", 0);
             target.put("pages", 0);
+            target.put("pageIds", new JSONArray());
             daily.put(target);
         }
         target.put("activeMs", target.optLong("activeMs", 0L) + Math.max(0L, activeMs));
         target.put("strokes", target.optInt("strokes", 0) + Math.max(0, strokes));
-        if (activeMs > 0L || strokes > 0) target.put("pages", target.optInt("pages", 0) + 1);
+        JSONArray pageIds = target.optJSONArray("pageIds");
+        if (pageIds == null) {
+            pageIds = new JSONArray();
+            target.put("pageIds", pageIds);
+        }
+        boolean knownPage = false;
+        for (int i = 0; i < pageIds.length(); i++) {
+            if (pageId != null && pageId.equals(pageIds.optString(i))) {
+                knownPage = true;
+                break;
+            }
+        }
+        if (!knownPage && pageId != null && (activeMs > 0L || strokes > 0)) {
+            pageIds.put(pageId);
+        }
+        target.put("pages", pageIds.length());
         while (daily.length() > 90) daily.remove(0);
     }
 
@@ -667,8 +685,9 @@ public final class NotebookStore {
             JSONObject statsObject = ensureStatsObject(pageId);
             PageStats value = parsePageStats(statsObject);
             long now = System.currentTimeMillis();
+            long delta = 0L;
             if (value.lastActivityAt > 0L) {
-                long delta = Math.max(0L, now - value.lastActivityAt);
+                delta = Math.max(0L, now - value.lastActivityAt);
                 value.activeMs += Math.min(delta, 15000L);
             }
             value.lastActivityAt = now;
