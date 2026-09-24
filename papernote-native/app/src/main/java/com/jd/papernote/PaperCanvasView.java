@@ -197,6 +197,17 @@ public final class PaperCanvasView extends View {
         return recallMode;
     }
 
+    public void centerOnPagePoint(float pageX, float pageY) {
+        writeMode = false;
+        zoom = 1.65f;
+        float scale = currentScale();
+        float pageW = PAGE_WIDTH * scale;
+        float pageH = PAGE_HEIGHT * scale;
+        panX = getWidth() * 0.5f - (pageW * 0.5f + pageX * scale);
+        panY = getHeight() * 0.5f - (pageH * 0.5f + pageY * scale);
+        invalidate();
+    }
+
     public void beginPinPlacement() {
         placingPin = true;
         setWriteMode(true);
