@@ -42,6 +42,10 @@ public final class PaperCanvasView extends View {
     public static final int TOOL_OVAL = 5;
     public static final int TOOL_TEXT = 6;
 
+    public static final int STUDY_VIEW_NORMAL = 0;
+    public static final int STUDY_VIEW_MARKS = 1;
+    public static final int STUDY_VIEW_FRICTION = 2;
+
     public interface Listener {
         void onCanvasDirty();
         void onRequestText(float pageX, float pageY);
@@ -50,6 +54,7 @@ public final class PaperCanvasView extends View {
     public interface InteractionListener {
         void onStrokeStarted(float pageX, float pageY, int tool);
         void onPinPlaced(float pageX, float pageY);
+        void onRecallRegionPlaced(float left, float top, float right, float bottom);
     }
 
     public static final class StudyPin {
@@ -80,10 +85,19 @@ public final class PaperCanvasView extends View {
     private InteractionListener interactionListener;
     private SoundEngine soundEngine;
     private List<StudyPin> studyPins = new ArrayList<>();
+    private List<NotebookStore.RecallRegion> recallRegions = new ArrayList<>();
+    private final int[] heatmap = new int[48];
+    private int studyViewMode = STUDY_VIEW_NORMAL;
     private Bitmap ghostBitmap;
     private float ghostAlpha = 0f;
     private boolean recallMode = false;
     private boolean placingPin = false;
+    private boolean placingRecallRegion = false;
+    private boolean recallRegionDrawing = false;
+    private float recallStartX;
+    private float recallStartY;
+    private float recallEndX;
+    private float recallEndY;
     private boolean replaying = false;
     private Bitmap replayFinalBitmap;
     private int replayIndex = 0;
@@ -168,6 +182,40 @@ public final class PaperCanvasView extends View {
 
     public void setStudyPins(List<StudyPin> pins) {
         this.studyPins = pins == null ? new ArrayList<>() : new ArrayList<>(pins);
+        invalidate();
+    }
+
+    public void setRecallRegions(List<NotebookStore.RecallRegion> regions) {
+        this.recallRegions = regions == null ? new ArrayList<>() : new ArrayList<>(regions);
+        invalidate();
+    }
+
+    public int getRecallRegionCount() {
+        return recallRegions.size();
+    }
+
+    public void setHeatmap(int[] values) {
+        java.util.Arrays.fill(heatmap, 0);
+        if (values != null) {
+            System.arraycopy(values, 0, heatmap, 0, Math.min(values.length, heatmap.length));
+        }
+        invalidate();
+    }
+
+    public void setStudyViewMode(int mode) {
+        studyViewMode = Math.max(STUDY_VIEW_NORMAL, Math.min(STUDY_VIEW_FRICTION, mode));
+        invalidate();
+    }
+
+    public int getStudyViewMode() {
+        return studyViewMode;
+    }
+
+    public void beginRecallRegionPlacement() {
+        placingRecallRegion = true;
+        recallRegionDrawing = false;
+        setWriteMode(true);
+        cancelLiveStroke();
         invalidate();
     }
 
@@ -526,17 +574,21 @@ public final class PaperCanvasView extends View {
 
         drawPaperBackground(canvas, paperType, marginEnabled);
 
-        if (!recallMode && ghostBitmap != null && !ghostBitmap.isRecycled() && ghostAlpha > 0f) {
+        if (studyViewMode != STUDY_VIEW_MARKS && ghostBitmap != null && !ghostBitmap.isRecycled() && ghostAlpha > 0f) {
             Paint ghostPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
             ghostPaint.setAlpha(Math.round(255f * ghostAlpha));
             canvas.drawBitmap(ghostBitmap, 0f, 0f, ghostPaint);
         }
 
-        if (!recallMode && inkBitmap != null) {
-            canvas.drawBitmap(inkBitmap, 0f, 0f, bitmapPaint);
+        if (inkBitmap != null) {
+            Paint contentPaint = bitmapPaint;
+            int oldAlpha = contentPaint.getAlpha();
+            contentPaint.setAlpha(studyViewMode == STUDY_VIEW_MARKS ? 65 : 255);
+            canvas.drawBitmap(inkBitmap, 0f, 0f, contentPaint);
+            contentPaint.setAlpha(oldAlpha);
         }
 
-        if (!recallMode && studyPins != null) {
+        if (studyPins != null) {
             Paint pinFill = new Paint(Paint.ANTI_ALIAS_FLAG);
             Paint pinRing = new Paint(Paint.ANTI_ALIAS_FLAG);
             pinRing.setStyle(Paint.Style.STROKE);
@@ -574,7 +626,7 @@ public final class PaperCanvasView extends View {
             }
         }
 
-        if (liveStrokeActive && tool != TOOL_ERASER
+        if (!recallMode && studyViewMode != STUDY_VIEW_MARKS && liveStrokeActive && tool != TOOL_ERASER
                 && (tool == TOOL_PEN || tool == TOOL_HIGHLIGHTER)) {
             Paint livePaint = configurePaint(tool == TOOL_HIGHLIGHTER);
             canvas.drawPath(liveStroke, livePaint);
@@ -592,7 +644,7 @@ public final class PaperCanvasView extends View {
             }
         }
 
-        if (liveStrokeActive && tool == TOOL_ERASER) {
+        if (!recallMode && studyViewMode != STUDY_VIEW_MARKS && liveStrokeActive && tool == TOOL_ERASER) {
             Paint eraserPreview = new Paint(Paint.ANTI_ALIAS_FLAG);
             eraserPreview.setStyle(Paint.Style.STROKE);
             eraserPreview.setStrokeWidth(Math.max(1f, penSize * 0.45f));
@@ -600,7 +652,7 @@ public final class PaperCanvasView extends View {
             canvas.drawCircle(liveLastX, liveLastY, eraserRadius(), eraserPreview);
         }
 
-        if (drawing && isShapeTool(tool)) {
+        if (!recallMode && studyViewMode != STUDY_VIEW_MARKS && drawing && isShapeTool(tool)) {
             Paint preview = configurePaint(false);
             preview.setStyle(Paint.Style.STROKE);
             preview.setColor(inkColor);
@@ -622,6 +674,29 @@ public final class PaperCanvasView extends View {
             }
         }
 
+        if (studyViewMode == STUDY_VIEW_FRICTION && !recallMode) {
+            drawHeatmap(canvas);
+        }
+
+        if (recallMode) {
+            drawRecallCover(canvas);
+        }
+
+        if (placingRecallRegion && recallRegionDrawing) {
+            Paint select = new Paint(Paint.ANTI_ALIAS_FLAG);
+            select.setStyle(Paint.Style.STROKE);
+            select.setStrokeWidth(4f);
+            select.setColor(0xFF3D6FE8);
+            select.setPathEffect(new android.graphics.DashPathEffect(new float[]{14f, 9f}, 0f));
+            RectF selected = new RectF(
+                    Math.min(recallStartX, recallEndX),
+                    Math.min(recallStartY, recallEndY),
+                    Math.max(recallStartX, recallEndX),
+                    Math.max(recallStartY, recallEndY)
+            );
+            canvas.drawRect(selected, select);
+        }
+
         canvas.restore();
 
         Paint border = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -629,6 +704,46 @@ public final class PaperCanvasView extends View {
         border.setStrokeWidth(dp(1));
         border.setColor(0x20000000);
         canvas.drawRect(pageRect, border);
+    }
+
+    private void drawHeatmap(Canvas canvas) {
+        int max = 1;
+        for (int value : heatmap) max = Math.max(max, value);
+        Paint heatPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        float cellW = PAGE_WIDTH / 6f;
+        float cellH = PAGE_HEIGHT / 8f;
+        for (int i = 0; i < heatmap.length; i++) {
+            int alpha = 20 + Math.round(145f * heatmap[i] / (float) max);
+            heatPaint.setColor(Color.argb(Math.min(180, alpha), 58, 110, 230));
+            float left = (i % 6) * cellW;
+            float top = (i / 6) * cellH;
+            canvas.drawRect(left, top, left + cellW, top + cellH, heatPaint);
+        }
+    }
+
+    private void drawRecallCover(Canvas canvas) {
+        Paint cover = new Paint(Paint.ANTI_ALIAS_FLAG);
+        cover.setColor(0xFFF3F5F8);
+        if (recallRegions == null || recallRegions.isEmpty()) {
+            canvas.drawRect(0f, 0f, PAGE_WIDTH, PAGE_HEIGHT, cover);
+            Paint message = new Paint(Paint.ANTI_ALIAS_FLAG);
+            message.setColor(0xFF7B8493);
+            message.setTextSize(28f);
+            message.setTypeface(Typeface.DEFAULT_BOLD);
+            canvas.drawText("RECALL MODE", 120f, 120f, message);
+            canvas.drawText("Add hidden areas to practice selected concepts.", 120f, 160f, message);
+            return;
+        }
+        for (NotebookStore.RecallRegion region : recallRegions) {
+            RectF rect = new RectF(region.left, region.top, region.right, region.bottom);
+            canvas.drawRoundRect(rect, 18f, 18f, cover);
+            Paint label = new Paint(Paint.ANTI_ALIAS_FLAG);
+            label.setColor(0xFF7B8493);
+            label.setTextSize(22f);
+            label.setTypeface(Typeface.DEFAULT_BOLD);
+            String title = region.label == null || region.label.isEmpty() ? "Recall" : region.label;
+            canvas.drawText(title, rect.left + 18f, rect.top + 34f, label);
+        }
     }
 
     private boolean isShapeTool(int value) {
@@ -668,6 +783,48 @@ public final class PaperCanvasView extends View {
     @Override
     public boolean onTouchEvent(MotionEvent event) {
         if (replaying) return true;
+
+        if (placingRecallRegion) {
+            switch (event.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                    screenToPage(event.getX(), event.getY(), pagePoint);
+                    recallStartX = recallEndX = pagePoint[0];
+                    recallStartY = recallEndY = pagePoint[1];
+                    recallRegionDrawing = true;
+                    requestParentIntercept(true);
+                    invalidate();
+                    return true;
+                case MotionEvent.ACTION_MOVE:
+                    if (!recallRegionDrawing) return true;
+                    screenToPage(event.getX(), event.getY(), pagePoint);
+                    recallEndX = pagePoint[0];
+                    recallEndY = pagePoint[1];
+                    postInvalidateOnAnimation();
+                    return true;
+                case MotionEvent.ACTION_UP:
+                case MotionEvent.ACTION_CANCEL:
+                    if (recallRegionDrawing && event.getActionMasked() == MotionEvent.ACTION_UP) {
+                        screenToPage(event.getX(), event.getY(), pagePoint);
+                        recallEndX = pagePoint[0];
+                        recallEndY = pagePoint[1];
+                        float left = Math.min(recallStartX, recallEndX);
+                        float top = Math.min(recallStartY, recallEndY);
+                        float right = Math.max(recallStartX, recallEndX);
+                        float bottom = Math.max(recallStartY, recallEndY);
+                        if (interactionListener != null) {
+                            interactionListener.onRecallRegionPlaced(left, top, right, bottom);
+                        }
+                    }
+                    placingRecallRegion = false;
+                    recallRegionDrawing = false;
+                    requestParentIntercept(false);
+                    invalidate();
+                    return true;
+                default:
+                    return true;
+            }
+        }
+
         if (placingPin) {
             if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
                 screenToPage(event.getX(), event.getY(), pagePoint);
@@ -680,6 +837,7 @@ public final class PaperCanvasView extends View {
             }
             return true;
         }
+
         if (recallMode) return true;
         if (!writeMode) return handlePanTouch(event);
         return handleWriteTouch(event);
