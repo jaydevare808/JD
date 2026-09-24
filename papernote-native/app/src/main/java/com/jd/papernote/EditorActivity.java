@@ -36,6 +36,7 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -222,7 +223,7 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
         search.addTextChangedListener(new android.text.TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
             @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
-                String q = s.toString().trim().toLowerCase();
+                String q = s.toString().trim().toLowerCase(Locale.ROOT);
                 list.removeAllViews();
                 for (NotebookStore.NotebookMeta notebook : store.list()) {
                     if (q.isEmpty()
@@ -894,7 +895,7 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
         note.setPadding(dp(8), dp(5), dp(8), dp(5));
 
         AlertDialog dialog = new AlertDialog.Builder(this)
-                .setTitle("Add " + studyTypeLabel(type).toLowerCase())
+                .setTitle("Add " + studyTypeLabel(type).toLowerCase(Locale.ROOT))
                 .setView(note)
                 .setNegativeButton("Cancel", null)
                 .setPositiveButton("Place on page", null)
@@ -987,7 +988,7 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
                     currentPageIndex = openPageIndex;
                     loadCurrentPage();
                     canvasView.centerOnPagePoint(marker.x, marker.y);
-                    toast("Showing " + studyTypeLabel(marker.type).toLowerCase() + " on " + markerPage.title);
+                    toast("Showing " + studyTypeLabel(marker.type).toLowerCase(Locale.ROOT) + " on " + markerPage.title);
                 });
                 top.addView(open);
 
