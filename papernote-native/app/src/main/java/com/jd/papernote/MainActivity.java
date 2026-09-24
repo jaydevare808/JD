@@ -226,6 +226,26 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
         studySection.addView(featureHint);
         root.addView(studySection);
 
+        List<NotebookStore.DailyStudy> todayList = store.getDailyStudy(1);
+        NotebookStore.DailyStudy today = todayList.isEmpty() ? new NotebookStore.DailyStudy() : todayList.get(0);
+        LinearLayout todayCard = new LinearLayout(this);
+        todayCard.setOrientation(LinearLayout.VERTICAL);
+        todayCard.setPadding(dp(16), dp(13), dp(16), dp(13));
+        todayCard.setBackground(rounded(0xFFFFFFFF, 18));
+        LinearLayout.LayoutParams todayParams = new LinearLayout.LayoutParams(-1, -2);
+        todayParams.setMargins(dp(16), 0, dp(16), dp(12));
+        todayCard.addView(text("TODAY", 11, 0xFF7A8495, true));
+        todayCard.addView(text(
+                formatDuration(today.activeMs) + " active  •  " + today.strokes + " strokes  •  " +
+                        today.pages + " pages touched",
+                15, 0xFF182339, true
+        ));
+        todayCard.addView(text(
+                "Your study activity is recorded locally and never uploaded by PaperNote.",
+                11, 0xFF6B7280, false
+        ));
+        root.addView(todayCard, todayParams);
+
         TextView section = text("MY NOTEBOOKS", 11, 0xFF7A8495, true);
         section.setPadding(dp(17), dp(2), dp(17), dp(7));
         root.addView(section);
@@ -1328,6 +1348,12 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
         if (soundButton != null) {
             soundButton.setText(soundEngine.isEnabled() ? "SOUND✓" : "SOUND");
         }
+    }
+
+    private String formatDuration(long ms) {
+        long minutes = Math.max(0L, ms / 60000L);
+        if (minutes < 60) return minutes + " min";
+        return (minutes / 60L) + "h " + String.format(Locale.ROOT, "%02dm", minutes % 60L);
     }
 
     private Button styledButton(String label, boolean primary) {
