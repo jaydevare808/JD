@@ -840,7 +840,7 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
 
     private void requestStudyMark(String type) {
         EditText note = new EditText(this);
-        note.setHint("Optional note, e.g. "Why does current fall here?"");
+        note.setHint("Optional note, e.g. Why does current fall here?");
         note.setSingleLine(false);
         note.setMinLines(2);
         note.setPadding(dp(8), dp(5), dp(8), dp(5));
@@ -1225,7 +1225,7 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
                 .setItems(labels.toArray(new String[0]), (dialog, which) -> {
                     int targetIndex = indices.get(which);
                     EditText label = new EditText(this);
-                    label.setHint("Connection label, e.g. "uses Kirchhoff's law"");
+                    label.setHint("Connection label, e.g. uses Kirchhoff's law");
                     new AlertDialog.Builder(this)
                             .setTitle("Name concept thread")
                             .setView(label)
