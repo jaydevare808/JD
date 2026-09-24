@@ -84,6 +84,10 @@ public final class PaperCanvasView extends View {
     private float ghostAlpha = 0f;
     private boolean recallMode = false;
     private boolean placingPin = false;
+    private boolean replaying = false;
+    private Bitmap replayFinalBitmap;
+    private int replayIndex = 0;
+    private Runnable replayRunnable;
 
     private int tool = TOOL_PEN;
     private int inkColor = Color.rgb(24, 35, 51);
@@ -208,6 +212,60 @@ public final class PaperCanvasView extends View {
         invalidate();
     }
 
+    public boolean isReplaying() {
+        return replaying;
+    }
+
+    public boolean replaySession() {
+        if (replaying || undo.isEmpty() || inkBitmap == null || baseBitmap == null) return false;
+
+        stopReplaySession();
+        replayFinalBitmap = inkBitmap.copy(Bitmap.Config.ARGB_8888, false);
+        Bitmap firstFrame = baseBitmap.copy(Bitmap.Config.ARGB_8888, true);
+        Bitmap old = inkBitmap;
+        inkBitmap = firstFrame;
+        if (old != null && !old.isRecycled() && old != baseBitmap) old.recycle();
+
+        replayIndex = 0;
+        replaying = true;
+        replayRunnable = new Runnable() {
+            @Override public void run() {
+                if (!replaying) return;
+                if (replayIndex >= undo.size()) {
+                    replaying = false;
+                    if (replayFinalBitmap != null && !replayFinalBitmap.isRecycled()) replayFinalBitmap.recycle();
+                    replayFinalBitmap = null;
+                    replayRunnable = null;
+                    invalidate();
+                    return;
+                }
+                EditCommand[] commands = undo.toArray(new EditCommand[0]);
+                if (replayIndex < commands.length) {
+                    commands[replayIndex].apply(new Canvas(inkBitmap));
+                }
+                replayIndex++;
+                invalidate();
+                postDelayed(this, 55L);
+            }
+        };
+        post(replayRunnable);
+        return true;
+    }
+
+    public void stopReplaySession() {
+        if (replayRunnable != null) removeCallbacks(replayRunnable);
+        replayRunnable = null;
+        replaying = false;
+        if (replayFinalBitmap != null && !replayFinalBitmap.isRecycled()) {
+            Bitmap old = inkBitmap;
+            inkBitmap = replayFinalBitmap;
+            replayFinalBitmap = null;
+            if (old != null && old != baseBitmap && !old.isRecycled()) old.recycle();
+        }
+        replayIndex = 0;
+        invalidate();
+    }
+
     public void beginPinPlacement() {
         placingPin = true;
         setWriteMode(true);
@@ -306,6 +364,7 @@ public final class PaperCanvasView extends View {
         undo.clear();
         redo.clear();
         clearGhostBitmap();
+        stopReplaySession();
         resetViewport();
         invalidate();
     }
@@ -608,6 +667,7 @@ public final class PaperCanvasView extends View {
 
     @Override
     public boolean onTouchEvent(MotionEvent event) {
+        if (replaying) return true;
         if (placingPin) {
             if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
                 screenToPage(event.getX(), event.getY(), pagePoint);
