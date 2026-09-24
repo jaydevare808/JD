@@ -856,6 +856,7 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
         menu.getMenu().add("Study views  •  normal / marks / friction");
         menu.getMenu().add("Recall practice  •  hide selected areas");
         menu.getMenu().add("Page analytics  •  time / strokes / friction map");
+        menu.getMenu().add("Notebook study summary");
         menu.getMenu().add("Ghost page  •  snapshot / compare");
         menu.getMenu().add("Exam practice  •  timed answer");
         menu.getMenu().add("Science experiment template");
@@ -885,6 +886,10 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
             }
             if (title.startsWith("Page analytics")) {
                 showPageAnalytics();
+                return true;
+            }
+            if ("Notebook study summary".equals(title)) {
+                showNotebookStudySummary();
                 return true;
             }
             if (title.contains("Recall") || title.contains("Reveal recall")) {
@@ -1419,6 +1424,49 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
                 .show();
     }
 
+    private void showNotebookStudySummary() {
+        if (currentNotebook == null) return;
+
+        int pageCount = currentNotebook.pages.size();
+        int strokes = store.getNotebookStrokeCount(currentNotebook);
+        long activeMs = store.getNotebookActiveMs(currentNotebook);
+        int openMarks = store.countStudyMarks(currentNotebook, null, true);
+        int doubts = store.countStudyMarks(currentNotebook, NotebookStore.StudyMark.DOUBT, true);
+        int mistakes = store.countStudyMarks(currentNotebook, NotebookStore.StudyMark.MISTAKE, true);
+        int important = store.countStudyMarks(currentNotebook, NotebookStore.StudyMark.IMPORTANT, true);
+        int revise = store.countStudyMarks(currentNotebook, NotebookStore.StudyMark.REVISE, true);
+
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(10), dp(2), dp(10), 0);
+        box.addView(text(pageCount + " pages  •  " + strokes + " strokes  •  " +
+                formatStudyDuration(activeMs), 17, 0xFF182339, true));
+        box.addView(text("Open markers: " + openMarks, 13, 0xFF5B6473, false));
+        box.addView(text("Doubt " + doubts + "  •  Mistake " + mistakes +
+                "  •  Important " + important + "  •  Revise " + revise,
+                13, 0xFF5B6473, false));
+
+        java.util.List<NotebookStore.DailyStudy> recent = store.getDailyStudy(7);
+        long recentMs = 0L;
+        int recentStrokes = 0;
+        for (NotebookStore.DailyStudy day : recent) {
+            recentMs += day.activeMs;
+            recentStrokes += day.strokes;
+        }
+        TextView rhythm = text(
+                "Last 7 days: " + formatStudyDuration(recentMs) +
+                        " active  •  " + recentStrokes + " strokes",
+                12, 0xFF667085, false);
+        rhythm.setPadding(0, dp(10), 0, 0);
+        box.addView(rhythm);
+
+        new AlertDialog.Builder(this)
+                .setTitle("Notebook study summary")
+                .setView(box)
+                .setPositiveButton("Done", null)
+                .show();
+    }
+
     private void showPageAnalytics() {
         if (currentNotebook == null || currentNotebook.pages.isEmpty()) return;
         String pageId = currentNotebook.pages.get(currentPageIndex).id;
@@ -1546,6 +1594,10 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
     }
 
     private void showExamPractice() {
+        if (examModeActive) {
+            toast("Finish the current exam before starting another one.");
+            return;
+        }
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
         box.setPadding(dp(16), dp(4), dp(16), 0);
@@ -1661,14 +1713,6 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
         NotebookStore.PageStats stats = currentNotebook == null || currentNotebook.pages.isEmpty()
                 ? new NotebookStore.PageStats()
                 : store.getPageStats(currentNotebook.pages.get(currentPageIndex).id);
-
-        long elapsedMs = 0L;
-        if (examEndAt > 0L) {
-            // We only know the requested duration and the remaining time. Use the difference
-            // to report a truthful session duration even if the app was backgrounded briefly.
-            elapsedMs = Math.max(0L,
-                    currentNotebook == null ? 0L : 0L);
-        }
 
         examModeActive = false;
         if (examTick != null) featureHandler.removeCallbacks(examTick);
@@ -2125,6 +2169,8 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
         menu.getMenu().add("Clear current page");
         menu.getMenu().add("Backup notebook");
         menu.getMenu().add("Restore backup");
+        menu.getMenu().add("Notebook PIN lock");
+        menu.getMenu().add("Paper Bridge");
         menu.getMenu().add("About passive stylus");
         menu.getMenu().add("Delete notebook");
         menu.setOnMenuItemClickListener(item -> {
@@ -2155,6 +2201,12 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
                     return true;
                 case "Restore backup":
                     chooseRestoreFile();
+                    return true;
+                case "Notebook PIN lock":
+                    showNotebookSecurity();
+                    return true;
+                case "Paper Bridge":
+                    showPaperBridge();
                     return true;
                 case "About passive stylus":
                     new AlertDialog.Builder(this)
