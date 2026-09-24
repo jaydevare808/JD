@@ -50,6 +50,7 @@ public final class PaperCanvasView extends View {
     public interface InteractionListener {
         void onStrokeStarted(float pageX, float pageY, int tool);
         void onPinPlaced(float pageX, float pageY);
+        void onPinTapped(float pageX, float pageY);
     }
 
     public static final class StudyPin {
@@ -84,8 +85,10 @@ public final class PaperCanvasView extends View {
     private Bitmap ghostBitmap;
     private float ghostAlpha = 0f;
     private boolean recallMode = false;
+    private boolean marksOnlyMode = false;
     private boolean placingPin = false;
     private boolean replaying = false;
+    private long replayDelayMs = 55L;
     private Bitmap replayFinalBitmap;
     private int replayIndex = 0;
     private Runnable replayRunnable;
@@ -131,6 +134,8 @@ public final class PaperCanvasView extends View {
 
     public PaperCanvasView(Context context) {
         super(context);
+
+        rebuildPaperCache();
 
         // Keep the View hardware accelerated. The old implementation forced a software
         // layer, which made live handwriting feel slow on tablets. Commands are rasterized
@@ -202,6 +207,26 @@ public final class PaperCanvasView extends View {
         return recallMode;
     }
 
+    public void setMarksOnlyMode(boolean enabled) {
+        marksOnlyMode = enabled;
+        cancelLiveStroke();
+        writeMode = false;
+        invalidate();
+    }
+
+    public boolean isMarksOnlyMode() {
+        return marksOnlyMode;
+    }
+
+    public void setReplaySpeed(float speed) {
+        float safe = Math.max(0.25f, Math.min(4f, speed));
+        replayDelayMs = Math.round(55f / safe);
+    }
+
+    public float getReplaySpeed() {
+        return 55f / Math.max(1L, replayDelayMs);
+    }
+
     public void centerOnPagePoint(float pageX, float pageY) {
         writeMode = false;
         zoom = 1.65f;
@@ -246,7 +271,7 @@ public final class PaperCanvasView extends View {
                 }
                 replayIndex++;
                 invalidate();
-                postDelayed(this, 55L);
+                postDelayed(this, replayDelayMs);
             }
         };
         post(replayRunnable);
