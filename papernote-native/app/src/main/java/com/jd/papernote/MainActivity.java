@@ -34,6 +34,7 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -247,12 +248,12 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
         search.addTextChangedListener(new android.text.TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
             @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
-                String q = s.toString().trim().toLowerCase();
+                String q = s.toString().trim().toLowerCase(Locale.ROOT);
                 list.removeAllViews();
                 for (NotebookStore.NotebookMeta notebook : store.list()) {
                     if (q.isEmpty()
-                            || notebook.title.toLowerCase().contains(q)
-                            || notebook.subject.toLowerCase().contains(q)) {
+                            || notebook.title.toLowerCase(Locale.ROOT).contains(q)
+                            || notebook.subject.toLowerCase(Locale.ROOT).contains(q)) {
                         addNotebookCard(list, notebook);
                     }
                 }
