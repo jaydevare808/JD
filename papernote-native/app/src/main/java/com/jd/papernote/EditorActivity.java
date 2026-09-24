@@ -5,6 +5,7 @@ import android.app.AlertDialog;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.Color;
+import android.graphics.Paint;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Build;
@@ -133,6 +134,12 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
     @Override
     public void onBackPressed() {
         saveHandler.removeCallbacksAndMessages(null);
+        featureHandler.removeCallbacksAndMessages(null);
+        stopExamTimer(false);
+        if (currentNotebook != null && !currentNotebook.pages.isEmpty()) {
+            try { store.flushPageActivity(currentNotebook.pages.get(currentPageIndex).id); } catch (Exception ignored) {}
+        }
+        flushPendingFeatureStroke();
         saveCurrentPageNow();
         finish();
     }
@@ -908,35 +915,38 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
 
         int total = 0;
         for (int pageIndex = 0; pageIndex < currentNotebook.pages.size(); pageIndex++) {
+            final int openPageIndex = pageIndex;
             NotebookStore.PageMeta page = currentNotebook.pages.get(pageIndex);
             for (NotebookStore.StudyMark mark : store.getStudyMarks(page.id)) {
+                final NotebookStore.StudyMark marker = mark;
+                final NotebookStore.PageMeta markerPage = page;
                 total++;
                 LinearLayout row = new LinearLayout(this);
                 row.setOrientation(LinearLayout.VERTICAL);
                 row.setPadding(dp(10), dp(9), dp(10), dp(9));
-                row.setBackground(rounded(mark.resolved ? 0xFFF2F4F7 : 0xFFFFFFFF, 14));
+                row.setBackground(rounded(marker.resolved ? 0xFFF2F4F7 : 0xFFFFFFFF, 14));
 
                 LinearLayout top = new LinearLayout(this);
                 top.setGravity(Gravity.CENTER_VERTICAL);
                 TextView label = text(
-                        studyTypeLabel(mark.type) + (mark.resolved ? "  ✓" : ""),
-                        14, mark.resolved ? 0xFF667085 : 0xFF182339, true);
+                        studyTypeLabel(marker.type) + (marker.resolved ? "  ✓" : ""),
+                        14, marker.resolved ? 0xFF667085 : 0xFF182339, true);
                 top.addView(label, new LinearLayout.LayoutParams(0, -2, 1f));
 
                 Button open = toolbarButton("OPEN");
                 open.setOnClickListener(v -> {
                     saveCurrentPageNow();
-                    currentPageIndex = pageIndex;
+                    currentPageIndex = openPageIndex;
                     loadCurrentPage();
-                    canvasView.centerOnPagePoint(mark.x, mark.y);
-                    toast("Showing " + studyTypeLabel(mark.type).toLowerCase() + " on " + page.title);
+                    canvasView.centerOnPagePoint(marker.x, marker.y);
+                    toast("Showing " + studyTypeLabel(marker.type).toLowerCase() + " on " + markerPage.title);
                 });
                 top.addView(open);
 
-                Button resolve = toolbarButton(mark.resolved ? "REOPEN" : "RESOLVE");
+                Button resolve = toolbarButton(marker.resolved ? "REOPEN" : "RESOLVE");
                 resolve.setOnClickListener(v -> {
                     try {
-                        store.setStudyMarkResolved(page.id, mark.id, !mark.resolved);
+                        store.setStudyMarkResolved(markerPage.id, marker.id, !marker.resolved);
                         refreshStudyPins();
                         showStudyInbox();
                     } catch (Exception e) {
@@ -946,7 +956,7 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
                 top.addView(resolve);
 
                 row.addView(top);
-                row.addView(text(page.title + "  •  " + mark.note, 12, 0xFF687385, false));
+                row.addView(text(markerPage.title + "  •  " + marker.note, 12, 0xFF687385, false));
                 LinearLayout.LayoutParams rp = new LinearLayout.LayoutParams(-1, -2);
                 rp.setMargins(0, 0, 0, dp(7));
                 list.addView(row, rp);
