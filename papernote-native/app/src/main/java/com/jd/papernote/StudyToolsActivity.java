@@ -94,13 +94,17 @@ public class StudyToolsActivity extends Activity {
         content.addView(text("PAGE & REVISION", 11, 0xFF667085, true), bottomMargin(dp(7)));
         addFeature(content, "Study marks", "Pin doubts, mistakes, important ideas and revise targets on the exact spot.", "marks");
         addFeature(content, "Study inbox", "Open, resolve or reopen every study marker from this notebook.", "inbox");
-        addFeature(content, "Recall cover", "Hide your handwriting for active recall and reveal it when you finish.", "recall");
+        addFeature(content, "Active recall regions", "Draw boxes over exact answers or formulas to hide only the parts you want to test yourself on.", "recall_regions");
+        addFeature(content, "Study views", "Switch between Normal, Mark Focus and Friction Map without changing your original handwriting.", "study_views");
+        addFeature(content, "Recall cover", "Hide your handwriting for a full-page recall check.", "recall");
         addFeature(content, "Ghost compare", "Capture a page snapshot and compare your current page with an earlier version.", "ghost");
         addFeature(content, "Page analytics", "See active time, stroke count and a page-area writing heatmap.", "analytics");
         addFeature(content, "Concept thread", "Connect two pages with a named concept relationship.", "link");
         addFeature(content, "Handwriting replay", "Replay the current editing session stroke-by-stroke without losing the saved page.", "replay");
         addFeature(content, "Exam practice", "Create a 2-, 3- or 4-mark answer page with a real countdown timer.", "exam");
         addFeature(content, "Science experiment", "Create a structured lab page with Aim, Apparatus, Procedure and Result sections.", "experiment");
+        addFeature(content, "Notebook PIN lock", "Protect a notebook behind a local 4–8 digit PIN gate. The PIN is stored as a salted PBKDF2 hash.", "security");
+        addFeature(content, "Paper Bridge", "Give every page a stable short ID for printed-paper copies and create a bridge mapping file.", "paper_bridge");
 
         content.addView(text("STUDY UTILITIES", 11, 0xFF667085, true), topMargin(dp(15), dp(7)));
         addUtility(content, "Scientific calculator", "Evaluate arithmetic, powers, square roots and π locally.", v -> showCalculator());

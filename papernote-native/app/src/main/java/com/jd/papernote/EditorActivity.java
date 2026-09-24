@@ -67,12 +67,22 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
     private Button palmButton;
     private Button soundButton;
     private FrameLayout canvasFrame;
+    private LinearLayout editorToolStrip;
+    private LinearLayout editorQuickBar;
+    private LinearLayout editorBottomBar;
+    private TextView bridgeLabel;
     private TextView examTimerLabel;
     private final Handler featureHandler = new Handler(Looper.getMainLooper());
     private Runnable examTick;
     private long examEndAt = 0L;
     private String pendingPinType;
     private String pendingPinNote;
+    private float pendingRecallLeft;
+    private float pendingRecallTop;
+    private float pendingRecallRight;
+    private float pendingRecallBottom;
+    private boolean notebookUnlocked = false;
+    private boolean examModeActive = false;
     private long lastFeatureActivityFlushAt = 0L;
     private int pendingFeatureStrokes = 0;
     private int pendingFeatureHeatX = 0;
@@ -106,10 +116,21 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
             currentNotebook = store.get(notebookId);
             currentPageIndex = getIntent().getIntExtra("page_index", 0);
             currentPageIndex = Math.max(0, Math.min(currentPageIndex, currentNotebook.pages.size() - 1));
-            buildEditor();
-            String requestedFeature = getIntent().getStringExtra("open_feature");
-            if (requestedFeature != null && !requestedFeature.trim().isEmpty()) {
-                featureHandler.postDelayed(() -> openRequestedFeature(requestedFeature), 320L);
+            final String requestedFeature = getIntent().getStringExtra("open_feature");
+            if (store.hasNotebookPin(currentNotebook)) {
+                showNotebookUnlockDialog(() -> {
+                    notebookUnlocked = true;
+                    buildEditor();
+                    if (requestedFeature != null && !requestedFeature.trim().isEmpty()) {
+                        featureHandler.postDelayed(() -> openRequestedFeature(requestedFeature), 320L);
+                    }
+                });
+            } else {
+                notebookUnlocked = true;
+                buildEditor();
+                if (requestedFeature != null && !requestedFeature.trim().isEmpty()) {
+                    featureHandler.postDelayed(() -> openRequestedFeature(requestedFeature), 320L);
+                }
             }
         } catch (Exception e) {
             Toast.makeText(this, "Could not open notebook", Toast.LENGTH_LONG).show();
@@ -369,6 +390,7 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
         toolScroll.setHorizontalScrollBarEnabled(false);
         LinearLayout tools = new LinearLayout(this);
         tools.setPadding(dp(9), dp(4), dp(9), dp(7));
+        editorToolStrip = tools;
 
         writeModeButton = toolbarButton("WRITE");
         writeModeButton.setOnClickListener(v -> {
@@ -425,6 +447,7 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
         root.addView(toolScroll);
 
         LinearLayout quickBar = new LinearLayout(this);
+        editorQuickBar = quickBar;
         quickBar.setGravity(Gravity.CENTER_VERTICAL);
         quickBar.setPadding(dp(10), dp(4), dp(10), dp(6));
         quickBar.setBackgroundColor(Color.WHITE);
@@ -504,11 +527,31 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
             public void onPinPlaced(float pageX, float pageY) {
                 placePendingStudyMark(pageX, pageY);
             }
+
+            @Override
+            public void onPinTapped(float pageX, float pageY) {
+                showNearestStudyMark(pageX, pageY);
+            }
+
+            @Override
+            public void onRecallRegionPlaced(float left, float top, float right, float bottom) {
+                beginRecallRegionLabel(left, top, right, bottom);
+            }
         });
         canvasFrame.addView(canvasView, new FrameLayout.LayoutParams(-1, -1));
+
+        bridgeLabel = text("", 10, 0xFF6B7280, true);
+        bridgeLabel.setGravity(Gravity.CENTER);
+        bridgeLabel.setBackground(rounded(0xF0FFFFFF, 12));
+        bridgeLabel.setVisibility(View.GONE);
+        FrameLayout.LayoutParams bridgeParams = new FrameLayout.LayoutParams(dp(150), dp(28), Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+        bridgeParams.setMargins(0, 0, 0, dp(18));
+        canvasFrame.addView(bridgeLabel, bridgeParams);
+
         root.addView(canvasFrame, new LinearLayout.LayoutParams(-1, 0, 1f));
 
         LinearLayout bottom = new LinearLayout(this);
+        editorBottomBar = bottom;
         bottom.setGravity(Gravity.CENTER_VERTICAL);
         bottom.setPadding(dp(7), dp(5), dp(7), dp(5));
         bottom.setBackgroundColor(Color.WHITE);
@@ -574,6 +617,9 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
         canvasView.setPaperType(page.paperType);
         canvasView.loadBitmap(bitmap);
         refreshStudyPins();
+        refreshRecallRegions();
+        refreshStudyHeatmap();
+        updateBridgeLabel();
         store.startPageSession(page.id);
         lastFeatureActivityFlushAt = System.currentTimeMillis();
         pageLabel.setText("Page " + (currentPageIndex + 1) + " / " + currentNotebook.pages.size());
@@ -590,6 +636,7 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
                 store.savePageBitmap(page.id, canvasView.getInkBitmap());
             }
             store.save(currentNotebook);
+            store.flushStudyData();
             if (saveLabel != null) saveLabel.setText("Saved");
         } catch (Exception e) {
             toast("Save failed");
@@ -769,8 +816,19 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
             case "inbox": showStudyInbox(); break;
             case "analytics": showPageAnalytics(); break;
             case "recall":
-                canvasView.setRecallMode(!canvasView.isRecallMode());
-                toast(canvasView.isRecallMode() ? "Recall cover active" : "Recall page revealed");
+                showRecallTools();
+                break;
+            case "recall_regions":
+                showRecallTools();
+                break;
+            case "study_views":
+                showStudyViewMenu();
+                break;
+            case "security":
+                showNotebookSecurity();
+                break;
+            case "paper_bridge":
+                showPaperBridge();
                 break;
             case "ghost": showGhostPageMenu(); break;
             case "exam": showExamPractice(); break;
@@ -797,15 +855,19 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
         PopupMenu menu = new PopupMenu(this, anchor);
         menu.getMenu().add("Study marks  •  doubt / mistake / important / revise");
         menu.getMenu().add("Study inbox");
-        menu.getMenu().add("Page analytics  •  time / strokes / heatmap");
-        menu.getMenu().add(canvasView != null && canvasView.isRecallMode() ? "Reveal recall page" : "Recall cover");
+        menu.getMenu().add("Study views  •  normal / marks / friction");
+        menu.getMenu().add("Recall practice  •  hide selected areas");
+        menu.getMenu().add("Page analytics  •  time / strokes / friction map");
+        menu.getMenu().add("Notebook study summary");
         menu.getMenu().add("Ghost page  •  snapshot / compare");
         menu.getMenu().add("Exam practice  •  timed answer");
         menu.getMenu().add("Science experiment template");
         menu.getMenu().add("Concept thread");
         menu.getMenu().add("Handwriting replay");
+        menu.getMenu().add("Paper Bridge  •  printable page ID");
+        menu.getMenu().add("Notebook PIN lock");
         menu.getMenu().add("Quick-share notebook backup");
-        if (examEndAt > 0L) menu.getMenu().add("Stop exam timer");
+        // Exam mode is finished from the timer badge so that the answer canvas stays isolated.
         menu.setOnMenuItemClickListener(item -> {
             String title = item.getTitle().toString();
             if (title.startsWith("Study marks")) {
@@ -816,8 +878,20 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
                 showStudyInbox();
                 return true;
             }
+            if (title.startsWith("Study views")) {
+                showStudyViewMenu();
+                return true;
+            }
+            if (title.startsWith("Recall practice")) {
+                showRecallTools();
+                return true;
+            }
             if (title.startsWith("Page analytics")) {
                 showPageAnalytics();
+                return true;
+            }
+            if ("Notebook study summary".equals(title)) {
+                showNotebookStudySummary();
                 return true;
             }
             if (title.contains("Recall") || title.contains("Reveal recall")) {
@@ -825,6 +899,14 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
                 toast(canvasView.isRecallMode()
                         ? "Recall cover active. Your page is safely hidden until you reveal it."
                         : "Recall page revealed.");
+                return true;
+            }
+            if (title.startsWith("Paper Bridge")) {
+                showPaperBridge();
+                return true;
+            }
+            if (title.startsWith("Notebook PIN")) {
+                showNotebookSecurity();
                 return true;
             }
             if (title.startsWith("Ghost page")) {
@@ -859,12 +941,340 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
                 return true;
             }
             if ("Stop exam timer".equals(title)) {
-                stopExamTimer(true);
+                confirmFinishExam();
                 return true;
             }
             return false;
         });
         menu.show();
+    }
+
+    private void showStudyViewMenu() {
+        String current = canvasView.getStudyViewMode() == PaperCanvasView.STUDY_VIEW_MARKS
+                ? "Mark focus" : canvasView.getStudyViewMode() == PaperCanvasView.STUDY_VIEW_FRICTION
+                ? "Friction map" : "Normal";
+        String[] choices = {"Normal", "Mark focus", "Friction map", "Recall practice"};
+        new AlertDialog.Builder(this)
+                .setTitle("Study view  •  current: " + current)
+                .setItems(choices, (dialog, which) -> {
+                    if (which == 0) {
+                        canvasView.setStudyViewMode(PaperCanvasView.STUDY_VIEW_NORMAL);
+                        canvasView.setRecallMode(false);
+                        toast("Normal page view");
+                    } else if (which == 1) {
+                        canvasView.setRecallMode(false);
+                        canvasView.setStudyViewMode(PaperCanvasView.STUDY_VIEW_MARKS);
+                        toast("Mark focus: study markers stay visible while handwriting is dimmed");
+                    } else if (which == 2) {
+                        canvasView.setRecallMode(false);
+                        canvasView.setStudyViewMode(PaperCanvasView.STUDY_VIEW_FRICTION);
+                        refreshStudyHeatmap();
+                        toast("Friction map: local writing concentration overlay");
+                    } else {
+                        canvasView.setStudyViewMode(PaperCanvasView.STUDY_VIEW_NORMAL);
+                        showRecallTools();
+                    }
+                })
+                .show();
+    }
+
+    private void showRecallTools() {
+        String[] choices = {
+                "Start / reveal recall",
+                "Add hidden area",
+                "Clear hidden areas",
+                "Reveal all",
+                "Reset revealed areas",
+                "List hidden areas"
+        };
+        new AlertDialog.Builder(this)
+                .setTitle("Active recall")
+                .setMessage("Hide only the answers or formulas you choose. Recall regions stay attached to this page and are included in notebook backups.")
+                .setItems(choices, (dialog, which) -> {
+                    switch (which) {
+                        case 0:
+                            canvasView.setStudyViewMode(PaperCanvasView.STUDY_VIEW_NORMAL);
+                            canvasView.setRecallMode(!canvasView.isRecallMode());
+                            toast(canvasView.isRecallMode() ? "Recall practice started" : "Recall revealed");
+                            break;
+                        case 1:
+                            canvasView.setRecallMode(false);
+                            canvasView.beginRecallRegionPlacement();
+                            toast("Drag a box around the answer/formula to hide");
+                            break;
+                        case 2:
+                            try {
+                                store.clearRecallRegions(currentNotebook.pages.get(currentPageIndex).id);
+                                refreshRecallRegions();
+                                toast("All hidden areas cleared from this page");
+                            } catch (Exception e) {
+                                toast("Could not clear hidden areas");
+                            }
+                            break;
+                        case 3:
+                            canvasView.revealAllRecallRegions();
+                            toast("All recall areas revealed for this session");
+                            break;
+                        case 4:
+                            canvasView.resetRecallReveals();
+                            toast("All recall areas hidden again");
+                            break;
+                        case 5:
+                            showRecallRegionList();
+                            break;
+                    }
+                })
+                .show();
+    }
+
+    private void beginRecallRegionLabel(float left, float top, float right, float bottom) {
+        pendingRecallLeft = left;
+        pendingRecallTop = top;
+        pendingRecallRight = right;
+        pendingRecallBottom = bottom;
+
+        EditText label = new EditText(this);
+        label.setHint("Optional label, e.g. Ohm's law");
+        new AlertDialog.Builder(this)
+                .setTitle("Name hidden area")
+                .setView(label)
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Hide", (dialog, which) -> {
+                    try {
+                        String value = label.getText().toString().trim();
+                        store.addRecallRegion(
+                                currentNotebook.pages.get(currentPageIndex).id,
+                                pendingRecallLeft, pendingRecallTop,
+                                pendingRecallRight, pendingRecallBottom, value
+                        );
+                        refreshRecallRegions();
+                        canvasView.setRecallMode(true);
+                        toast("Recall area added");
+                    } catch (Exception e) {
+                        toast(e.getMessage() == null ? "Could not add recall area" : e.getMessage());
+                    }
+                })
+                .show();
+    }
+
+    private void refreshRecallRegions() {
+        if (canvasView == null || currentNotebook == null || currentNotebook.pages.isEmpty()) return;
+        String pageId = currentNotebook.pages.get(currentPageIndex).id;
+        canvasView.setRecallRegions(store.getRecallRegions(pageId));
+    }
+
+    private void showRecallRegionList() {
+        if (currentNotebook == null) return;
+        List<NotebookStore.RecallRegion> regions =
+                store.getRecallRegions(currentNotebook.pages.get(currentPageIndex).id);
+        if (regions.isEmpty()) {
+            new AlertDialog.Builder(this)
+                    .setTitle("Hidden areas")
+                    .setMessage("No hidden areas on this page. Choose Add hidden area and drag over an answer or formula.")
+                    .setPositiveButton("OK", null)
+                    .show();
+            return;
+        }
+        String[] names = new String[regions.size()];
+        for (int i = 0; i < regions.size(); i++) {
+            NotebookStore.RecallRegion region = regions.get(i);
+            names[i] = (region.label == null || region.label.isEmpty() ? "Hidden area " + (i + 1) : region.label);
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("Hidden areas")
+                .setItems(names, (dialog, which) -> {
+                    NotebookStore.RecallRegion region = regions.get(which);
+                    new AlertDialog.Builder(this)
+                            .setTitle(names[which])
+                            .setMessage("Delete this recall area?")
+                            .setNegativeButton("Keep", null)
+                            .setPositiveButton("Delete", (d, w) -> {
+                                try {
+                                    store.deleteRecallRegion(currentNotebook.pages.get(currentPageIndex).id, region.id);
+                                    refreshRecallRegions();
+                                } catch (Exception e) {
+                                    toast("Could not delete hidden area");
+                                }
+                            })
+                            .show();
+                })
+                .setNegativeButton("Close", null)
+                .show();
+    }
+
+    private void refreshStudyHeatmap() {
+        if (canvasView == null || currentNotebook == null || currentNotebook.pages.isEmpty()) return;
+        NotebookStore.PageStats stats =
+                store.getPageStats(currentNotebook.pages.get(currentPageIndex).id);
+        canvasView.setHeatmap(stats.heatmap);
+    }
+
+    private void showPaperBridge() {
+        if (currentNotebook == null || currentNotebook.pages.isEmpty()) return;
+        String code = store.getPaperBridgeCode(currentNotebook.pages.get(currentPageIndex).id);
+        StringBuilder message = new StringBuilder();
+        message.append("CURRENT PAGE ID\\n")
+                .append(code)
+                .append("\\n\\n")
+                .append("Use this short ID on a printed paper copy. It stays tied to this local PaperNote page.\\n\\n")
+                .append("NOTEBOOK PAGE IDs\\n");
+        for (int i = 0; i < currentNotebook.pages.size(); i++) {
+            NotebookStore.PageMeta page = currentNotebook.pages.get(i);
+            message.append(i + 1).append(". ")
+                    .append(page.title).append("  •  ")
+                    .append(store.getPaperBridgeCode(page.id)).append("\\n");
+        }
+
+        bridgeLabel.setText("PaperNote ID  •  " + code);
+        bridgeLabel.setVisibility(View.VISIBLE);
+
+        new AlertDialog.Builder(this)
+                .setTitle("Paper Bridge")
+                .setMessage(message.toString())
+                .setPositiveButton("Copy current ID", (d, w) -> {
+                    android.content.ClipboardManager clipboard =
+                            (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+                    if (clipboard != null) {
+                        clipboard.setPrimaryClip(android.content.ClipData.newPlainText("PaperNote page ID", code));
+                        toast("Page ID copied");
+                    }
+                })
+                .setNeutralButton("Hide ID", (d, w) -> bridgeLabel.setVisibility(View.GONE))
+                .setNegativeButton("Create bridge file", (d, w) -> choosePaperBridgeFile())
+                .show();
+    }
+
+    private void choosePaperBridgeFile() {
+        if (currentNotebook == null) return;
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.setType("application/json");
+        intent.putExtra(
+                Intent.EXTRA_TITLE,
+                safeFileName(currentNotebook.title) + "-paper-bridge.json"
+        );
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        startActivityForResult(intent, 506);
+    }
+
+    private void writePaperBridgeFile(Uri uri) throws Exception {
+        JSONObject bridge = store.exportPaperBridge(currentNotebook);
+        try (OutputStream out = getContentResolver().openOutputStream(uri)) {
+            if (out == null) throw new Exception("Could not open bridge file.");
+            out.write(bridge.toString(2).getBytes(StandardCharsets.UTF_8));
+        }
+    }
+
+    private void updateBridgeLabel() {
+        if (bridgeLabel == null || currentNotebook == null || currentNotebook.pages.isEmpty()) return;
+        String code = store.getPaperBridgeCode(currentNotebook.pages.get(currentPageIndex).id);
+        bridgeLabel.setText("PaperNote ID  •  " + code);
+    }
+
+    private void showNotebookSecurity() {
+        if (currentNotebook == null) return;
+        boolean locked = store.hasNotebookPin(currentNotebook);
+        String[] choices = locked
+                ? new String[]{"Change PIN", "Remove PIN lock"}
+                : new String[]{"Set PIN lock"};
+        new AlertDialog.Builder(this)
+                .setTitle("Notebook security")
+                .setMessage(locked
+                        ? "This notebook asks for a local PIN before PaperNote opens it."
+                        : "Add a 4–8 digit local PIN gate to this notebook. No account is required.")
+                .setItems(choices, (dialog, which) -> {
+                    if (!locked || which == 0) promptSetNotebookPin();
+                    else promptRemoveNotebookPin();
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void promptSetNotebookPin() {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(10), 0, dp(10), 0);
+        EditText first = new EditText(this);
+        first.setHint("New PIN, 4–8 digits");
+        first.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD);
+        EditText confirm = new EditText(this);
+        confirm.setHint("Confirm PIN");
+        confirm.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD);
+        box.addView(first);
+        box.addView(confirm);
+        new AlertDialog.Builder(this)
+                .setTitle(store.hasNotebookPin(currentNotebook) ? "Change notebook PIN" : "Set notebook PIN")
+                .setView(box)
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Save", (d, w) -> {
+                    String a = first.getText().toString();
+                    String b = confirm.getText().toString();
+                    if (!a.equals(b)) {
+                        toast("PINs do not match");
+                        return;
+                    }
+                    try {
+                        store.setNotebookPin(currentNotebook, a);
+                        toast("Notebook PIN saved");
+                    } catch (Exception e) {
+                        toast(e.getMessage() == null ? "Invalid PIN" : e.getMessage());
+                    }
+                })
+                .show();
+    }
+
+    private void promptRemoveNotebookPin() {
+        EditText pin = new EditText(this);
+        pin.setHint("Current PIN");
+        pin.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD);
+        new AlertDialog.Builder(this)
+                .setTitle("Remove PIN lock")
+                .setView(pin)
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Remove", (d, w) -> {
+                    if (!store.verifyNotebookPin(currentNotebook, pin.getText().toString())) {
+                        toast("Incorrect PIN");
+                        return;
+                    }
+                    try {
+                        store.clearNotebookPin(currentNotebook);
+                        toast("Notebook PIN removed");
+                    } catch (Exception e) {
+                        toast("Could not remove PIN");
+                    }
+                })
+                .show();
+    }
+
+    private void showNotebookUnlockDialog(Runnable unlockedAction) {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(16), dp(4), dp(16), 0);
+        TextView info = text("This notebook is protected by a local PIN.", 13, 0xFF667085, false);
+        box.addView(info);
+        EditText pin = new EditText(this);
+        pin.setHint("Enter PIN");
+        pin.setSingleLine(true);
+        pin.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD);
+        box.addView(pin);
+        final int[] attempts = {0};
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("Unlock notebook")
+                .setView(box)
+                .setCancelable(false)
+                .setNegativeButton("Cancel", (d, w) -> finish())
+                .setPositiveButton("Unlock", null)
+                .create();
+        dialog.setOnShowListener(v -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(click -> {
+            if (store.verifyNotebookPin(currentNotebook, pin.getText().toString())) {
+                dialog.dismiss();
+                unlockedAction.run();
+                return;
+            }
+            attempts[0]++;
+            pin.setText("");
+            info.setText(attempts[0] >= 5 ? "Incorrect PIN. Check your notebook PIN and try again." : "Incorrect PIN.");
+        }));
+        dialog.show();
     }
 
     private void showStudyMarksMenu() {
@@ -923,6 +1333,73 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
         } catch (Exception e) {
             toast("Could not place study mark");
         }
+    }
+
+    private void showNearestStudyMark(float pageX, float pageY) {
+        if (currentNotebook == null || currentNotebook.pages.isEmpty()) return;
+        NotebookStore.StudyMark nearest = null;
+        float bestDistance = Float.MAX_VALUE;
+        String pageId = currentNotebook.pages.get(currentPageIndex).id;
+        for (NotebookStore.StudyMark mark : store.getStudyMarks(pageId)) {
+            float dx = mark.x - pageX;
+            float dy = mark.y - pageY;
+            float distance = dx * dx + dy * dy;
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                nearest = mark;
+            }
+        }
+        if (nearest == null || bestDistance > 32f * 32f) return;
+
+        final NotebookStore.StudyMark marker = nearest;
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(8), dp(4), dp(8), 0);
+        box.addView(text(
+                studyTypeLabel(marker.type) + (marker.resolved ? "  •  Resolved" : "  •  Open"),
+                15, 0xFF182339, true
+        ));
+        box.addView(text(
+                marker.note == null || marker.note.isEmpty() ? "No note attached." : marker.note,
+                13, 0xFF5B6473, false
+        ));
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("Study marker")
+                .setView(box)
+                .setNegativeButton("Close", null)
+                .setNeutralButton(marker.resolved ? "Reopen" : "Resolve", null)
+                .setPositiveButton("Delete", null)
+                .create();
+
+        dialog.setOnShowListener(v -> {
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(click -> {
+                try {
+                    store.setStudyMarkResolved(currentNotebook.pages.get(currentPageIndex).id,
+                            marker.id, !marker.resolved);
+                    refreshStudyPins();
+                    dialog.dismiss();
+                } catch (Exception e) {
+                    toast("Could not update marker");
+                }
+            });
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(click -> {
+                new AlertDialog.Builder(this)
+                        .setTitle("Delete marker?")
+                        .setMessage("This removes the " + studyTypeLabel(marker.type).toLowerCase(Locale.ROOT) + " pin from this page.")
+                        .setNegativeButton("Keep", null)
+                        .setPositiveButton("Delete", (d, w) -> {
+                            try {
+                                store.deleteStudyMark(currentNotebook.pages.get(currentPageIndex).id, marker.id);
+                                refreshStudyPins();
+                                dialog.dismiss();
+                            } catch (Exception e) {
+                                toast("Could not delete marker");
+                            }
+                        }).show();
+            });
+        });
+        dialog.show();
     }
 
     private void refreshStudyPins() {
@@ -1022,6 +1499,49 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
         new AlertDialog.Builder(this)
                 .setTitle("Study inbox  •  " + total)
                 .setView(scroll)
+                .setPositiveButton("Done", null)
+                .show();
+    }
+
+    private void showNotebookStudySummary() {
+        if (currentNotebook == null) return;
+
+        int pageCount = currentNotebook.pages.size();
+        int strokes = store.getNotebookStrokeCount(currentNotebook);
+        long activeMs = store.getNotebookActiveMs(currentNotebook);
+        int openMarks = store.countStudyMarks(currentNotebook, null, true);
+        int doubts = store.countStudyMarks(currentNotebook, NotebookStore.StudyMark.DOUBT, true);
+        int mistakes = store.countStudyMarks(currentNotebook, NotebookStore.StudyMark.MISTAKE, true);
+        int important = store.countStudyMarks(currentNotebook, NotebookStore.StudyMark.IMPORTANT, true);
+        int revise = store.countStudyMarks(currentNotebook, NotebookStore.StudyMark.REVISE, true);
+
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(10), dp(2), dp(10), 0);
+        box.addView(text(pageCount + " pages  •  " + strokes + " strokes  •  " +
+                formatStudyDuration(activeMs), 17, 0xFF182339, true));
+        box.addView(text("Open markers: " + openMarks, 13, 0xFF5B6473, false));
+        box.addView(text("Doubt " + doubts + "  •  Mistake " + mistakes +
+                "  •  Important " + important + "  •  Revise " + revise,
+                13, 0xFF5B6473, false));
+
+        java.util.List<NotebookStore.DailyStudy> recent = store.getDailyStudy(7);
+        long recentMs = 0L;
+        int recentStrokes = 0;
+        for (NotebookStore.DailyStudy day : recent) {
+            recentMs += day.activeMs;
+            recentStrokes += day.strokes;
+        }
+        TextView rhythm = text(
+                "Last 7 days: " + formatStudyDuration(recentMs) +
+                        " active  •  " + recentStrokes + " strokes",
+                12, 0xFF667085, false);
+        rhythm.setPadding(0, dp(10), 0, 0);
+        box.addView(rhythm);
+
+        new AlertDialog.Builder(this)
+                .setTitle("Notebook study summary")
+                .setView(box)
                 .setPositiveButton("Done", null)
                 .show();
     }
@@ -1153,6 +1673,10 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
     }
 
     private void showExamPractice() {
+        if (examModeActive) {
+            toast("Finish the current exam before starting another one.");
+            return;
+        }
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
         box.setPadding(dp(16), dp(4), dp(16), 0);
@@ -1223,37 +1747,53 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
 
     private void startExamTimer(int minutes) {
         stopExamTimer(false);
+        examModeActive = true;
+        setExamUiLocked(true);
         examEndAt = System.currentTimeMillis() + minutes * 60L * 1000L;
+
         examTimerLabel = text(formatExamTime(minutes * 60L), 12, Color.WHITE, true);
         examTimerLabel.setGravity(Gravity.CENTER);
         examTimerLabel.setBackground(rounded(0xFFB23A48, 16));
-        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(dp(94), dp(38), Gravity.TOP | Gravity.END);
+        examTimerLabel.setOnClickListener(v -> confirmFinishExam());
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(dp(112), dp(42), Gravity.TOP | Gravity.END);
         lp.setMargins(0, dp(8), dp(14), 0);
         canvasFrame.addView(examTimerLabel, lp);
 
         examTick = new Runnable() {
             @Override public void run() {
+                if (!examModeActive) return;
                 long remaining = Math.max(0L, examEndAt - System.currentTimeMillis());
-                examTimerLabel.setText(formatExamTime(remaining / 1000L));
+                if (examTimerLabel != null) {
+                    examTimerLabel.setText(formatExamTime(remaining / 1000L));
+                    examTimerLabel.setContentDescription("Exam timer. Tap to finish the exam.");
+                }
                 if (remaining <= 0L) {
-                    stopExamTimer(true);
-                    toast("Exam timer finished. Your answer page is saved.");
+                    finishExamSession(true);
                     return;
                 }
                 featureHandler.postDelayed(this, 500L);
             }
         };
         featureHandler.post(examTick);
-        toast("Exam practice started");
+        toast("Exam mode started. Tap the timer when you finish.");
     }
 
-    private String formatExamTime(long totalSeconds) {
-        long minutes = Math.max(0L, totalSeconds) / 60L;
-        long seconds = Math.max(0L, totalSeconds) % 60L;
-        return String.format(java.util.Locale.US, "%02d:%02d", minutes, seconds);
+    private void confirmFinishExam() {
+        new AlertDialog.Builder(this)
+                .setTitle("Finish exam practice?")
+                .setMessage("PaperNote will save the answer page and show the time/stroke summary. Your handwritten answer stays unchanged.")
+                .setNegativeButton("Keep writing", null)
+                .setPositiveButton("Finish", (d, w) -> finishExamSession(false))
+                .show();
     }
 
-    private void stopExamTimer(boolean keepMessage) {
+    private void finishExamSession(boolean timedOut) {
+        saveCurrentPageNow();
+        NotebookStore.PageStats stats = currentNotebook == null || currentNotebook.pages.isEmpty()
+                ? new NotebookStore.PageStats()
+                : store.getPageStats(currentNotebook.pages.get(currentPageIndex).id);
+
+        examModeActive = false;
         if (examTick != null) featureHandler.removeCallbacks(examTick);
         examTick = null;
         examEndAt = 0L;
@@ -1261,6 +1801,68 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
             ((android.view.ViewGroup) examTimerLabel.getParent()).removeView(examTimerLabel);
         }
         examTimerLabel = null;
+        setExamUiLocked(false);
+
+        String message = (timedOut ? "Time is up." : "Exam practice finished.") +
+                "\n\n" + stats.strokes + " recorded strokes\n" +
+                formatStudyDuration(stats.activeMs) + " active writing time\n\n" +
+                "Your answer page is saved locally.";
+        new AlertDialog.Builder(this)
+                .setTitle("Exam result")
+                .setMessage(message)
+                .setPositiveButton("Done", null)
+                .show();
+    }
+
+    private void setExamUiLocked(boolean locked) {
+        if (editorToolStrip != null) editorToolStrip.setEnabled(!locked);
+        if (editorQuickBar != null) editorQuickBar.setEnabled(!locked);
+        if (editorBottomBar != null) editorBottomBar.setEnabled(!locked);
+
+        if (editorToolStrip != null) {
+            for (int i = 0; i < editorToolStrip.getChildCount(); i++) {
+                View child = editorToolStrip.getChildAt(i);
+                child.setEnabled(!locked);
+            }
+        }
+        if (editorQuickBar != null) {
+            for (int i = 0; i < editorQuickBar.getChildCount(); i++) {
+                View child = editorQuickBar.getChildAt(i);
+                child.setEnabled(!locked);
+            }
+        }
+        if (editorBottomBar != null) {
+            for (int i = 0; i < editorBottomBar.getChildCount(); i++) {
+                View child = editorBottomBar.getChildAt(i);
+                child.setEnabled(!locked);
+            }
+        }
+        if (locked && canvasView != null) {
+            canvasView.setRecallMode(false);
+            canvasView.setStudyViewMode(PaperCanvasView.STUDY_VIEW_NORMAL);
+            canvasView.setWriteMode(true);
+            canvasView.setTool(PaperCanvasView.TOOL_PEN);
+        }
+    }
+
+    private String formatExamTime(long totalSeconds) {
+        long safe = Math.max(0L, totalSeconds);
+        long minutes = safe / 60L;
+        long seconds = safe % 60L;
+        return String.format(Locale.US, "%02d:%02d", minutes, seconds);
+    }
+
+    private void stopExamTimer(boolean keepMessage) {
+        if (!examModeActive && examTick == null && examTimerLabel == null) return;
+        if (examTick != null) featureHandler.removeCallbacks(examTick);
+        examTick = null;
+        examEndAt = 0L;
+        if (examTimerLabel != null && examTimerLabel.getParent() != null) {
+            ((android.view.ViewGroup) examTimerLabel.getParent()).removeView(examTimerLabel);
+        }
+        examTimerLabel = null;
+        examModeActive = false;
+        setExamUiLocked(false);
         if (keepMessage && saveLabel != null) saveLabel.setText("Saved");
     }
 
@@ -1653,6 +2255,8 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
         menu.getMenu().add("Clear current page");
         menu.getMenu().add("Backup notebook");
         menu.getMenu().add("Restore backup");
+        menu.getMenu().add("Notebook PIN lock");
+        menu.getMenu().add("Paper Bridge");
         menu.getMenu().add("About passive stylus");
         menu.getMenu().add("Delete notebook");
         menu.setOnMenuItemClickListener(item -> {
@@ -1683,6 +2287,12 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
                     return true;
                 case "Restore backup":
                     chooseRestoreFile();
+                    return true;
+                case "Notebook PIN lock":
+                    showNotebookSecurity();
+                    return true;
+                case "Paper Bridge":
+                    showPaperBridge();
                     return true;
                 case "About passive stylus":
                     new AlertDialog.Builder(this)
@@ -1969,6 +2579,12 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
                     out.write(backup.getBytes(StandardCharsets.UTF_8));
                 }
                 toast("Backup exported");
+                return;
+            }
+
+            if (requestCode == 506) {
+                writePaperBridgeFile(uri);
+                toast("Paper Bridge file exported");
                 return;
             }
 
