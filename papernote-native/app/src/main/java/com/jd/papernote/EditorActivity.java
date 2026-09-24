@@ -841,6 +841,10 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
             case "calculator": showCalculator(); break;
             case "timer": showFocusTimer(); break;
             case "checklist": showStudyChecklist(); break;
+            case "recall_regions": showRecallTools(); break;
+            case "study_views": showStudyViewMenu(); break;
+            case "security": showNotebookSecurity(); break;
+            case "paper_bridge": showPaperBridge(); break;
             default: showStudyTools(null); break;
         }
     }
@@ -860,7 +864,7 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
         menu.getMenu().add("Paper Bridge  •  printable page ID");
         menu.getMenu().add("Notebook PIN lock");
         menu.getMenu().add("Quick-share notebook backup");
-        if (examEndAt > 0L) menu.getMenu().add("Stop exam timer");
+        // Exam mode is finished from the timer badge so that the answer canvas stays isolated.
         menu.setOnMenuItemClickListener(item -> {
             String title = item.getTitle().toString();
             if (title.startsWith("Study marks")) {
@@ -930,7 +934,7 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
                 return true;
             }
             if ("Stop exam timer".equals(title)) {
-                stopExamTimer(true);
+                confirmFinishExam();
                 return true;
             }
             return false;
@@ -1089,26 +1093,58 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
     }
 
     private void showPaperBridge() {
-        if (currentNotebook == null) return;
+        if (currentNotebook == null || currentNotebook.pages.isEmpty()) return;
         String code = store.getPaperBridgeCode(currentNotebook.pages.get(currentPageIndex).id);
         StringBuilder message = new StringBuilder();
-        message.append("Current page ID\n").append(code)
-                .append("\n\nWrite or print this code beside the physical page. It is a stable local bridge ID for this PaperNote page.\n\n")
-                .append("All page IDs:\n");
+        message.append("CURRENT PAGE ID\\n")
+                .append(code)
+                .append("\\n\\n")
+                .append("Use this short ID on a printed paper copy. It stays tied to this local PaperNote page.\\n\\n")
+                .append("NOTEBOOK PAGE IDs\\n");
         for (int i = 0; i < currentNotebook.pages.size(); i++) {
             NotebookStore.PageMeta page = currentNotebook.pages.get(i);
             message.append(i + 1).append(". ")
                     .append(page.title).append("  •  ")
-                    .append(store.getPaperBridgeCode(page.id)).append("\n");
+                    .append(store.getPaperBridgeCode(page.id)).append("\\n");
         }
+
         bridgeLabel.setText("PaperNote ID  •  " + code);
         bridgeLabel.setVisibility(View.VISIBLE);
+
         new AlertDialog.Builder(this)
                 .setTitle("Paper Bridge")
                 .setMessage(message.toString())
-                .setPositiveButton("Keep ID visible", null)
-                .setNegativeButton("Hide", (d, w) -> bridgeLabel.setVisibility(View.GONE))
+                .setPositiveButton("Copy current ID", (d, w) -> {
+                    android.content.ClipboardManager clipboard =
+                            (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+                    if (clipboard != null) {
+                        clipboard.setPrimaryClip(android.content.ClipData.newPlainText("PaperNote page ID", code));
+                        toast("Page ID copied");
+                    }
+                })
+                .setNeutralButton("Hide ID", (d, w) -> bridgeLabel.setVisibility(View.GONE))
+                .setNegativeButton("Create bridge file", (d, w) -> choosePaperBridgeFile())
                 .show();
+    }
+
+    private void choosePaperBridgeFile() {
+        if (currentNotebook == null) return;
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.setType("application/json");
+        intent.putExtra(
+                Intent.EXTRA_TITLE,
+                safeFileName(currentNotebook.title) + "-paper-bridge.json"
+        );
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        startActivityForResult(intent, 506);
+    }
+
+    private void writePaperBridgeFile(Uri uri) throws Exception {
+        JSONObject bridge = store.exportPaperBridge(currentNotebook);
+        try (OutputStream out = getContentResolver().openOutputStream(uri)) {
+            if (out == null) throw new Exception("Could not open bridge file.");
+            out.write(bridge.toString(2).getBytes(StandardCharsets.UTF_8));
+        }
     }
 
     private void updateBridgeLabel() {
@@ -1580,37 +1616,61 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
 
     private void startExamTimer(int minutes) {
         stopExamTimer(false);
+        examModeActive = true;
+        setExamUiLocked(true);
         examEndAt = System.currentTimeMillis() + minutes * 60L * 1000L;
+
         examTimerLabel = text(formatExamTime(minutes * 60L), 12, Color.WHITE, true);
         examTimerLabel.setGravity(Gravity.CENTER);
         examTimerLabel.setBackground(rounded(0xFFB23A48, 16));
-        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(dp(94), dp(38), Gravity.TOP | Gravity.END);
+        examTimerLabel.setOnClickListener(v -> confirmFinishExam());
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(dp(112), dp(42), Gravity.TOP | Gravity.END);
         lp.setMargins(0, dp(8), dp(14), 0);
         canvasFrame.addView(examTimerLabel, lp);
 
         examTick = new Runnable() {
             @Override public void run() {
+                if (!examModeActive) return;
                 long remaining = Math.max(0L, examEndAt - System.currentTimeMillis());
-                examTimerLabel.setText(formatExamTime(remaining / 1000L));
+                if (examTimerLabel != null) {
+                    examTimerLabel.setText(formatExamTime(remaining / 1000L));
+                    examTimerLabel.setContentDescription("Exam timer. Tap to finish the exam.");
+                }
                 if (remaining <= 0L) {
-                    stopExamTimer(true);
-                    toast("Exam timer finished. Your answer page is saved.");
+                    finishExamSession(true);
                     return;
                 }
                 featureHandler.postDelayed(this, 500L);
             }
         };
         featureHandler.post(examTick);
-        toast("Exam practice started");
+        toast("Exam mode started. Tap the timer when you finish.");
     }
 
-    private String formatExamTime(long totalSeconds) {
-        long minutes = Math.max(0L, totalSeconds) / 60L;
-        long seconds = Math.max(0L, totalSeconds) % 60L;
-        return String.format(java.util.Locale.US, "%02d:%02d", minutes, seconds);
+    private void confirmFinishExam() {
+        new AlertDialog.Builder(this)
+                .setTitle("Finish exam practice?")
+                .setMessage("PaperNote will save the answer page and show the time/stroke summary. Your handwritten answer stays unchanged.")
+                .setNegativeButton("Keep writing", null)
+                .setPositiveButton("Finish", (d, w) -> finishExamSession(false))
+                .show();
     }
 
-    private void stopExamTimer(boolean keepMessage) {
+    private void finishExamSession(boolean timedOut) {
+        saveCurrentPageNow();
+        NotebookStore.PageStats stats = currentNotebook == null || currentNotebook.pages.isEmpty()
+                ? new NotebookStore.PageStats()
+                : store.getPageStats(currentNotebook.pages.get(currentPageIndex).id);
+
+        long elapsedMs = 0L;
+        if (examEndAt > 0L) {
+            // We only know the requested duration and the remaining time. Use the difference
+            // to report a truthful session duration even if the app was backgrounded briefly.
+            elapsedMs = Math.max(0L,
+                    currentNotebook == null ? 0L : 0L);
+        }
+
+        examModeActive = false;
         if (examTick != null) featureHandler.removeCallbacks(examTick);
         examTick = null;
         examEndAt = 0L;
@@ -1618,6 +1678,61 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
             ((android.view.ViewGroup) examTimerLabel.getParent()).removeView(examTimerLabel);
         }
         examTimerLabel = null;
+        setExamUiLocked(false);
+
+        String message = (timedOut ? "Time is up." : "Exam practice finished.") +
+                "\n\n" + stats.strokes + " recorded strokes\n" +
+                formatStudyDuration(stats.activeMs) + " active writing time\n\n" +
+                "Your answer page is saved locally.";
+        new AlertDialog.Builder(this)
+                .setTitle("Exam result")
+                .setMessage(message)
+                .setPositiveButton("Done", null)
+                .show();
+    }
+
+    private void setExamUiLocked(boolean locked) {
+        if (editorToolStrip != null) editorToolStrip.setEnabled(!locked);
+        if (editorQuickBar != null) editorQuickBar.setEnabled(!locked);
+        if (editorBottomBar != null) editorBottomBar.setEnabled(!locked);
+
+        if (editorToolStrip != null) {
+            for (int i = 0; i < editorToolStrip.getChildCount(); i++) {
+                View child = editorToolStrip.getChildAt(i);
+                child.setEnabled(!locked);
+            }
+        }
+        if (editorQuickBar != null) {
+            for (int i = 0; i < editorQuickBar.getChildCount(); i++) {
+                View child = editorQuickBar.getChildAt(i);
+                child.setEnabled(!locked);
+            }
+        }
+        if (editorBottomBar != null) {
+            for (int i = 0; i < editorBottomBar.getChildCount(); i++) {
+                View child = editorBottomBar.getChildAt(i);
+                child.setEnabled(!locked);
+            }
+        }
+        if (locked && canvasView != null) {
+            canvasView.setRecallMode(false);
+            canvasView.setStudyViewMode(PaperCanvasView.STUDY_VIEW_NORMAL);
+            canvasView.setWriteMode(true);
+            canvasView.setTool(PaperCanvasView.TOOL_PEN);
+        }
+    }
+
+    private void stopExamTimer(boolean keepMessage) {
+        if (!examModeActive && examTick == null && examTimerLabel == null) return;
+        if (examTick != null) featureHandler.removeCallbacks(examTick);
+        examTick = null;
+        examEndAt = 0L;
+        if (examTimerLabel != null && examTimerLabel.getParent() != null) {
+            ((android.view.ViewGroup) examTimerLabel.getParent()).removeView(examTimerLabel);
+        }
+        examTimerLabel = null;
+        examModeActive = false;
+        setExamUiLocked(false);
         if (keepMessage && saveLabel != null) saveLabel.setText("Saved");
     }
 
@@ -2326,6 +2441,12 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
                     out.write(backup.getBytes(StandardCharsets.UTF_8));
                 }
                 toast("Backup exported");
+                return;
+            }
+
+            if (requestCode == 506) {
+                writePaperBridgeFile(uri);
+                toast("Paper Bridge file exported");
                 return;
             }
 
