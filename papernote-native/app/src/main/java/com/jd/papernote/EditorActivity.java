@@ -631,6 +631,7 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
                 store.savePageBitmap(page.id, canvasView.getInkBitmap());
             }
             store.save(currentNotebook);
+            store.flushStudyData();
             if (saveLabel != null) saveLabel.setText("Saved");
         } catch (Exception e) {
             toast("Save failed");
