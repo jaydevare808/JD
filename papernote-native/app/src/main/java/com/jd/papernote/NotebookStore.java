@@ -147,6 +147,7 @@ public final class NotebookStore {
     private final File pagesDir;
     private final File studyFile;
     private JSONObject studyRoot;
+    private boolean studyDirty = false;
 
     public NotebookStore(Context context) {
         File root = new File(context.getFilesDir(), "papernote");
@@ -675,7 +676,7 @@ public final class NotebookStore {
             value.lastActivityAt = System.currentTimeMillis();
             value.lastStudiedAt = value.lastActivityAt;
             writePageStats(stats, value);
-            saveStudyRoot();
+            studyDirty = true;
         } catch (Exception ignored) {
         }
     }
@@ -694,7 +695,7 @@ public final class NotebookStore {
             value.lastStudiedAt = now;
             writePageStats(statsObject, value);
             recordDailyDelta(pageId, Math.min(delta, 15000L), 0);
-            saveStudyRoot();
+            studyDirty = true;
         } catch (Exception ignored) {
         }
     }
@@ -712,7 +713,7 @@ public final class NotebookStore {
             value.lastStudiedAt = now;
             writePageStats(statsObject, value);
             recordDailyDelta(pageId, Math.min(delta, 15000L), 0);
-            saveStudyRoot();
+            studyDirty = true;
         } catch (Exception ignored) {
         }
     }
@@ -728,6 +729,14 @@ public final class NotebookStore {
             value.lastStudiedAt = System.currentTimeMillis();
             writePageStats(statsObject, value);
             recordDailyDelta(pageId, 0L, 1);
+            studyDirty = true;
+        } catch (Exception ignored) {
+        }
+    }
+
+    public synchronized void flushStudyData() {
+        if (!studyDirty) return;
+        try {
             saveStudyRoot();
         } catch (Exception ignored) {
         }
@@ -1144,6 +1153,7 @@ public final class NotebookStore {
         writeText(tmp, studyRoot.toString());
         if (studyFile.exists() && !studyFile.delete()) throw new Exception("Unable to replace study data");
         if (!tmp.renameTo(studyFile)) throw new Exception("Unable to commit study data");
+        studyDirty = false;
     }
 
     private File ghostFile(String id) {
