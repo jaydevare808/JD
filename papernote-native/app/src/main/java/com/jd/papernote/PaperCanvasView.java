@@ -207,6 +207,8 @@ public final class PaperCanvasView extends View {
 
     public void setStudyViewMode(int mode) {
         studyViewMode = Math.max(STUDY_VIEW_NORMAL, Math.min(STUDY_VIEW_FRICTION, mode));
+        cancelLiveStroke();
+        if (studyViewMode != STUDY_VIEW_NORMAL) writeMode = false;
         invalidate();
     }
 
