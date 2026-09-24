@@ -486,6 +486,30 @@ public final class PaperCanvasView extends View {
         if (old != null && !old.isRecycled()) old.recycle();
     }
 
+    private void rebuildPaperCache() {
+        Bitmap old = paperBitmap;
+        paperBitmap = Bitmap.createBitmap(PAGE_WIDTH, PAGE_HEIGHT, Bitmap.Config.ARGB_8888);
+        drawPaperBackground(new Canvas(paperBitmap), paperType, marginEnabled);
+        if (old != null && !old.isRecycled()) old.recycle();
+    }
+
+    private StudyPin findPinNear(float x, float y) {
+        if (studyPins == null) return null;
+        final float threshold = 42f;
+        StudyPin nearest = null;
+        float best = threshold * threshold;
+        for (StudyPin pin : studyPins) {
+            float dx = pin.x - x;
+            float dy = pin.y - y;
+            float d2 = dx * dx + dy * dy;
+            if (d2 <= best) {
+                best = d2;
+                nearest = pin;
+            }
+        }
+        return nearest;
+    }
+
     private void rebuildFromBase() {
         if (baseBitmap == null) return;
         Bitmap rebuilt = baseBitmap.copy(Bitmap.Config.ARGB_8888, true);
