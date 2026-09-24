@@ -45,9 +45,10 @@ public final class NotebookStore {
         public String note;
         public boolean resolved;
         public long createdAt;
+        public long reviewAt;
 
         public StudyMark(String id, String pageId, String type, float x, float y, String note,
-                         boolean resolved, long createdAt) {
+                         boolean resolved, long createdAt, long reviewAt) {
             this.id = id;
             this.pageId = pageId;
             this.type = type;
@@ -56,6 +57,16 @@ public final class NotebookStore {
             this.note = note;
             this.resolved = resolved;
             this.createdAt = createdAt;
+            this.reviewAt = reviewAt;
+        }
+
+        public StudyMark(String id, String pageId, String type, float x, float y, String note,
+                         boolean resolved, long createdAt) {
+            this(id, pageId, type, x, y, note, resolved, createdAt, createdAt);
+        }
+
+        public boolean isDue(long now) {
+            return !resolved && reviewAt <= now;
         }
     }
 
@@ -312,6 +323,12 @@ public final class NotebookStore {
     }
 
     public synchronized StudyMark addStudyMark(String pageId, String type, float x, float y, String note) throws Exception {
+        long now = System.currentTimeMillis();
+        return addStudyMark(pageId, type, x, y, note, now);
+    }
+
+    public synchronized StudyMark addStudyMark(String pageId, String type, float x, float y,
+                                               String note, long reviewAt) throws Exception {
         JSONArray marks = studyRoot.optJSONArray("marks");
         if (marks == null) {
             marks = new JSONArray();
@@ -325,11 +342,47 @@ public final class NotebookStore {
                 y,
                 note == null ? "" : note.trim(),
                 false,
-                System.currentTimeMillis()
+                System.currentTimeMillis(),
+                Math.max(System.currentTimeMillis(), reviewAt)
         );
         marks.put(studyMarkJson(mark));
         saveStudyRoot();
         return mark;
+    }
+
+    public synchronized void rescheduleStudyMark(String pageId, String markId, long reviewAt) throws Exception {
+        JSONArray marks = studyRoot.optJSONArray("marks");
+        if (marks == null) return;
+        for (int i = 0; i < marks.length(); i++) {
+            JSONObject item = marks.optJSONObject(i);
+            if (item != null && markId.equals(item.optString("id"))
+                    && pageId.equals(item.optString("pageId"))) {
+                item.put("reviewAt", Math.max(System.currentTimeMillis(), reviewAt));
+                saveStudyRoot();
+                return;
+            }
+        }
+    }
+
+    public synchronized List<StudyMark> getDueStudyMarks(NotebookMeta notebook) {
+        ArrayList<StudyMark> result = new ArrayList<>();
+        if (notebook == null) return result;
+        java.util.HashSet<String> pageIds = new java.util.HashSet<>();
+        for (PageMeta page : notebook.pages) pageIds.add(page.id);
+        JSONArray marks = studyRoot.optJSONArray("marks");
+        if (marks == null) return result;
+        long now = System.currentTimeMillis();
+        for (int i = 0; i < marks.length(); i++) {
+            JSONObject item = marks.optJSONObject(i);
+            if (item == null || !pageIds.contains(item.optString("pageId"))) continue;
+            StudyMark mark = parseStudyMark(item);
+            if (mark.isDue(now)) result.add(mark);
+        }
+        result.sort((a, b) -> {
+            int due = Long.compare(a.reviewAt, b.reviewAt);
+            return due != 0 ? due : Long.compare(b.createdAt, a.createdAt);
+        });
+        return result;
     }
 
     public synchronized void setStudyMarkResolved(String pageId, String markId, boolean resolved) throws Exception {
@@ -414,13 +467,19 @@ public final class NotebookStore {
     }
 
     public synchronized void recordStroke(String pageId, float pageX, float pageY) {
+        recordStrokeBatch(pageId, 1, pageX, pageY);
+    }
+
+    public synchronized void recordStrokeBatch(String pageId, int count, float pageX, float pageY) {
+        if (count <= 0) return;
         try {
             JSONObject statsObject = ensureStatsObject(pageId);
             PageStats value = parsePageStats(statsObject);
-            value.strokes++;
+            value.strokes += count;
             int gx = Math.max(0, Math.min(5, (int) (pageX / PaperCanvasView.PAGE_WIDTH * 6f)));
             int gy = Math.max(0, Math.min(7, (int) (pageY / PaperCanvasView.PAGE_HEIGHT * 8f)));
-            value.heatmap[gy * 6 + gx]++;
+            value.heatmap[gy * 6 + gx] += count;
+            value.lastStudiedAt = System.currentTimeMillis();
             writePageStats(statsObject, value);
             saveStudyRoot();
         } catch (Exception ignored) {
@@ -571,6 +630,7 @@ public final class NotebookStore {
                 out.put("note", item.optString("note", ""));
                 out.put("resolved", item.optBoolean("resolved", false));
                 out.put("createdAt", item.optLong("createdAt", System.currentTimeMillis()));
+                out.put("reviewAt", item.optLong("reviewAt", item.optLong("createdAt", System.currentTimeMillis())));
                 marks.put(out);
             }
         }
@@ -747,7 +807,8 @@ public final class NotebookStore {
                 (float) item.optDouble("y", 100),
                 item.optString("note", ""),
                 item.optBoolean("resolved", false),
-                item.optLong("createdAt", System.currentTimeMillis())
+                item.optLong("createdAt", System.currentTimeMillis()),
+                item.optLong("reviewAt", item.optLong("createdAt", System.currentTimeMillis()))
         );
     }
 

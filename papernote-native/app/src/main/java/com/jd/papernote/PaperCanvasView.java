@@ -76,6 +76,7 @@ public final class PaperCanvasView extends View {
 
     private Bitmap inkBitmap;
     private Bitmap baseBitmap;
+    private Bitmap paperBitmap;
     private Listener listener;
     private InteractionListener interactionListener;
     private SoundEngine soundEngine;
@@ -330,11 +331,13 @@ public final class PaperCanvasView extends View {
 
     public void setMarginEnabled(boolean enabled) {
         marginEnabled = enabled;
+        rebuildPaperCache();
         invalidate();
     }
 
     public void setPaperType(String type) {
         paperType = type == null ? PAPER_RULED : type;
+        rebuildPaperCache();
         invalidate();
     }
 
@@ -451,6 +454,13 @@ public final class PaperCanvasView extends View {
         command.apply(new Canvas(inkBitmap));
     }
 
+    private void rebuildPaperCache() {
+        Bitmap old = paperBitmap;
+        paperBitmap = Bitmap.createBitmap(PAGE_WIDTH, PAGE_HEIGHT, Bitmap.Config.ARGB_8888);
+        drawPaperBackground(new Canvas(paperBitmap), paperType, marginEnabled);
+        if (old != null && !old.isRecycled()) old.recycle();
+    }
+
     private void rebuildFromBase() {
         if (baseBitmap == null) return;
         Bitmap rebuilt = baseBitmap.copy(Bitmap.Config.ARGB_8888, true);
@@ -475,6 +485,15 @@ public final class PaperCanvasView extends View {
 
     private void notifyDirty() {
         if (listener != null) listener.onCanvasDirty();
+    }
+
+    @Override
+    protected void onDetachedFromWindow() {
+        stopReplaySession();
+        cancelLiveStroke();
+        if (paperBitmap != null && !paperBitmap.isRecycled()) paperBitmap.recycle();
+        paperBitmap = null;
+        super.onDetachedFromWindow();
     }
 
     @Override
@@ -524,7 +543,11 @@ public final class PaperCanvasView extends View {
         canvas.translate(pageRect.left, pageRect.top);
         canvas.scale(scale, scale);
 
-        drawPaperBackground(canvas, paperType, marginEnabled);
+        if (paperBitmap != null && !paperBitmap.isRecycled()) {
+            canvas.drawBitmap(paperBitmap, 0f, 0f, bitmapPaint);
+        } else {
+            drawPaperBackground(canvas, paperType, marginEnabled);
+        }
 
         if (!recallMode && ghostBitmap != null && !ghostBitmap.isRecycled() && ghostAlpha > 0f) {
             Paint ghostPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
