@@ -92,6 +92,29 @@ public class StudyHubActivity extends Activity {
         ));
         content.addView(summary, marginParams(dp(10)));
 
+        TextView rhythmTitle = text("14-DAY STUDY RHYTHM", 12, 0xFF667085, true);
+        content.addView(rhythmTitle, marginParams(dp(8)));
+        LinearLayout rhythmCard = card();
+        List<NotebookStore.DailyStudy> daily = store.getDailyStudy(14);
+        long maxDailyMs = 1L;
+        int totalDailyStrokes = 0;
+        for (NotebookStore.DailyStudy day : daily) {
+            maxDailyMs = Math.max(maxDailyMs, day.activeMs);
+            totalDailyStrokes += day.strokes;
+        }
+        DailyRhythmView rhythmView = new DailyRhythmView(this, daily, maxDailyMs);
+        rhythmCard.addView(rhythmView, new LinearLayout.LayoutParams(-1, dp(150)));
+        rhythmCard.addView(text(
+                "Recent 14 days  •  " + formatDuration(daily.stream().mapToLong(d -> d.activeMs).sum()) +
+                        " active  •  " + totalDailyStrokes + " strokes",
+                12, 0xFF5B6473, false
+        ));
+        rhythmCard.addView(text(
+                "This is a local activity history, not a measure of marks, intelligence, or academic performance.",
+                10, 0xFF7A8495, false
+        ));
+        content.addView(rhythmCard, marginParams(dp(10)));
+
         TextView nextTitle = text("NEXT ACTIONS", 12, 0xFF667085, true);
         content.addView(nextTitle, marginParams(dp(8)));
 
@@ -408,6 +431,56 @@ public class StudyHubActivity extends Activity {
             intent.putExtra("notebook_id", notebookId);
             intent.putExtra("page_index", pageIndex);
             activity.startActivity(intent);
+        }
+    }
+
+    private static final class DailyRhythmView extends View {
+        private final List<NotebookStore.DailyStudy> days;
+        private final long maxMs;
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+
+        DailyRhythmView(Activity context, List<NotebookStore.DailyStudy> days, long maxMs) {
+            super(context);
+            this.days = new ArrayList<>(days);
+            this.maxMs = Math.max(1L, maxMs);
+            setContentDescription("Fourteen day local study activity chart");
+        }
+
+        @Override protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+            int w = getWidth();
+            int h = getHeight();
+            float gap = dp(5f);
+            float usableW = Math.max(1f, w - gap * Math.max(0, days.size() - 1));
+            float barW = Math.max(dp(6f), usableW / Math.max(1, days.size()));
+            float baseline = h - dp(25f);
+            Paint guide = new Paint(Paint.ANTI_ALIAS_FLAG);
+            guide.setColor(0xFFE5E8EE);
+            guide.setStrokeWidth(dp(1f));
+            canvas.drawLine(0, baseline, w, baseline, guide);
+            for (int i = 0; i < days.size(); i++) {
+                NotebookStore.DailyStudy day = days.get(i);
+                float x = i * (barW + gap);
+                float ratio = Math.min(1f, day.activeMs / (float) maxMs);
+                float barH = ratio * (baseline - dp(20f));
+                paint.setColor(0xFF486CC8);
+                canvas.drawRoundRect(
+                        x, baseline - barH, x + barW, baseline,
+                        dp(5f), dp(5f), paint
+                );
+                if (i == 0 || i == days.size() - 1 || i % 3 == 0) {
+                    Paint label = new Paint(Paint.ANTI_ALIAS_FLAG);
+                    label.setColor(0xFF7A8495);
+                    label.setTextSize(dp(9f));
+                    String dayLabel = day.date.length() >= 10
+                            ? day.date.substring(8) : day.date;
+                    canvas.drawText(dayLabel, x, h - dp(6f), label);
+                }
+            }
+        }
+
+        private float dp(float value) {
+            return value * getResources().getDisplayMetrics().density;
         }
     }
 
