@@ -36,6 +36,7 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -106,6 +107,10 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
             currentPageIndex = getIntent().getIntExtra("page_index", 0);
             currentPageIndex = Math.max(0, Math.min(currentPageIndex, currentNotebook.pages.size() - 1));
             buildEditor();
+            String requestedFeature = getIntent().getStringExtra("open_feature");
+            if (requestedFeature != null && !requestedFeature.trim().isEmpty()) {
+                featureHandler.postDelayed(() -> openRequestedFeature(requestedFeature), 320L);
+            }
         } catch (Exception e) {
             Toast.makeText(this, "Could not open notebook", Toast.LENGTH_LONG).show();
             finish();
@@ -218,7 +223,7 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
         search.addTextChangedListener(new android.text.TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
             @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
-                String q = s.toString().trim().toLowerCase();
+                String q = s.toString().trim().toLowerCase(Locale.ROOT);
                 list.removeAllViews();
                 for (NotebookStore.NotebookMeta notebook : store.list()) {
                     if (q.isEmpty()
@@ -346,9 +351,9 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
         saveLabel.setBackground(rounded(0xFF26334D, 18));
         header.addView(saveLabel, new LinearLayout.LayoutParams(dp(68), dp(34)));
 
-        Button hub = toolbarButton("HUB");
-        hub.setOnClickListener(v -> startActivity(new Intent(this, StudyHubActivity.class)));
-        header.addView(hub, new LinearLayout.LayoutParams(dp(56), dp(44)));
+        Button workspace = toolbarButton("TOOLS");
+        workspace.setOnClickListener(v -> startActivity(new Intent(this, StudyToolsActivity.class)));
+        header.addView(workspace, new LinearLayout.LayoutParams(dp(62), dp(44)));
 
         Button more = toolbarButton("⋮");
         more.setTextSize(22);
@@ -356,7 +361,7 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
         header.addView(more, new LinearLayout.LayoutParams(dp(48), dp(44)));
         root.addView(header);
 
-        TextView pageHint = text("WRITE MODE  •  Use the controls below for pen, marker, eraser and study tools.", 11, 0xFF5C6678, true);
+        TextView pageHint = text("WRITE MODE  •  PaperNote saves locally. Use TOOLS for the complete study workspace.", 11, 0xFF5C6678, true);
         pageHint.setPadding(dp(14), dp(7), dp(14), dp(5));
         root.addView(pageHint);
 
@@ -758,6 +763,36 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
     }
 
 
+    private void openRequestedFeature(String feature) {
+        switch (feature == null ? "" : feature) {
+            case "marks": showStudyMarksMenu(); break;
+            case "inbox": showStudyInbox(); break;
+            case "analytics": showPageAnalytics(); break;
+            case "recall":
+                canvasView.setRecallMode(!canvasView.isRecallMode());
+                toast(canvasView.isRecallMode() ? "Recall cover active" : "Recall page revealed");
+                break;
+            case "ghost": showGhostPageMenu(); break;
+            case "exam": showExamPractice(); break;
+            case "experiment": showExperimentTemplate(); break;
+            case "link": showConceptThread(); break;
+            case "replay":
+                if (canvasView.isReplaying()) {
+                    canvasView.stopReplaySession();
+                    toast("Replay stopped");
+                } else if (!canvasView.replaySession()) {
+                    toast("Draw something in this session first, then replay it.");
+                }
+                break;
+            case "share": shareNotebookBackup(); break;
+            case "export": showExportDialog(); break;
+            case "calculator": showCalculator(); break;
+            case "timer": showFocusTimer(); break;
+            case "checklist": showStudyChecklist(); break;
+            default: showStudyTools(null); break;
+        }
+    }
+
     private void showStudyTools(View anchor) {
         PopupMenu menu = new PopupMenu(this, anchor);
         menu.getMenu().add("Study marks  •  doubt / mistake / important / revise");
@@ -768,6 +803,7 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
         menu.getMenu().add("Exam practice  •  timed answer");
         menu.getMenu().add("Science experiment template");
         menu.getMenu().add("Concept thread");
+        menu.getMenu().add("Handwriting replay");
         menu.getMenu().add("Quick-share notebook backup");
         if (examEndAt > 0L) menu.getMenu().add("Stop exam timer");
         menu.setOnMenuItemClickListener(item -> {
@@ -805,6 +841,17 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
             }
             if (title.startsWith("Concept thread")) {
                 showConceptThread();
+                return true;
+            }
+            if ("Handwriting replay".equals(title)) {
+                if (canvasView.isReplaying()) {
+                    canvasView.stopReplaySession();
+                    toast("Replay stopped");
+                } else if (!canvasView.replaySession()) {
+                    toast("Draw something in this session first, then replay it.");
+                } else {
+                    toast("Replaying this session stroke-by-stroke");
+                }
                 return true;
             }
             if (title.startsWith("Quick-share")) {
@@ -848,7 +895,7 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
         note.setPadding(dp(8), dp(5), dp(8), dp(5));
 
         AlertDialog dialog = new AlertDialog.Builder(this)
-                .setTitle("Add " + studyTypeLabel(type).toLowerCase())
+                .setTitle("Add " + studyTypeLabel(type).toLowerCase(Locale.ROOT))
                 .setView(note)
                 .setNegativeButton("Cancel", null)
                 .setPositiveButton("Place on page", null)
@@ -941,7 +988,7 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
                     currentPageIndex = openPageIndex;
                     loadCurrentPage();
                     canvasView.centerOnPagePoint(marker.x, marker.y);
-                    toast("Showing " + studyTypeLabel(marker.type).toLowerCase() + " on " + markerPage.title);
+                    toast("Showing " + studyTypeLabel(marker.type).toLowerCase(Locale.ROOT) + " on " + markerPage.title);
                 });
                 top.addView(open);
 
@@ -1031,11 +1078,12 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
     private void showGhostPageMenu() {
         String[] items = {
                 "Capture snapshot of current page",
-                "Show / hide ghost overlay",
+                canvasView.hasGhostBitmap() ? "Adjust / hide ghost overlay" : "Show ghost overlay",
                 "Clear saved snapshot"
         };
         new AlertDialog.Builder(this)
-                .setTitle("Ghost page")
+                .setTitle("Ghost compare")
+                .setMessage("Use a saved earlier snapshot as a transparent reference while you revise the current page.")
                 .setItems(items, (dialog, which) -> {
                     NotebookStore.PageMeta page = currentNotebook.pages.get(currentPageIndex);
                     if (which == 0) {
@@ -1053,8 +1101,7 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
                         }
                     } else if (which == 1) {
                         if (canvasView.hasGhostBitmap()) {
-                            canvasView.clearGhostBitmap();
-                            toast("Ghost overlay hidden");
+                            showGhostOpacityDialog();
                         } else {
                             Bitmap ghost = store.loadPageGhostSnapshot(
                                     page.id, PaperCanvasView.PAGE_WIDTH, PaperCanvasView.PAGE_HEIGHT);
@@ -1062,7 +1109,7 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
                                 toast("No snapshot yet. Capture one first.");
                             } else {
                                 canvasView.setGhostBitmap(ghost, 0.24f);
-                                toast("Ghost overlay shown");
+                                toast("Ghost overlay shown at 24%");
                             }
                         }
                     } else {
@@ -1073,6 +1120,36 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
                 })
                 .setNegativeButton("Cancel", null)
                 .show();
+    }
+
+    private void showGhostOpacityDialog() {
+        SeekBar seek = new SeekBar(this);
+        seek.setMax(100);
+        seek.setProgress(24);
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(18), dp(5), dp(18), 0);
+        TextView value = text("Opacity: 24%", 14, 0xFF182339, true);
+        box.addView(value);
+        box.addView(seek, new LinearLayout.LayoutParams(-1, dp(48)));
+        new AlertDialog.Builder(this)
+                .setTitle("Ghost overlay")
+                .setView(box)
+                .setPositiveButton("Apply", (d, w) -> {
+                    Bitmap ghost = store.loadPageGhostSnapshot(
+                            currentNotebook.pages.get(currentPageIndex).id,
+                            PaperCanvasView.PAGE_WIDTH, PaperCanvasView.PAGE_HEIGHT);
+                    if (ghost != null) canvasView.setGhostBitmap(ghost, seek.getProgress() / 100f);
+                })
+                .setNegativeButton("Hide", (d, w) -> canvasView.clearGhostBitmap())
+                .show();
+        seek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                value.setText("Opacity: " + progress + "%");
+            }
+            @Override public void onStartTrackingTouch(SeekBar seekBar) {}
+            @Override public void onStopTrackingTouch(SeekBar seekBar) {}
+        });
     }
 
     private void showExamPractice() {

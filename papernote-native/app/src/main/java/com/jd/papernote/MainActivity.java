@@ -34,6 +34,7 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -197,11 +198,33 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
         chipsScroll.addView(chips);
         root.addView(chipsScroll);
 
-        Button studyHub = styledButton("Study Hub  •  progress, doubts & mistakes", false);
-        studyHub.setOnClickListener(v -> startActivity(new Intent(this, StudyHubActivity.class)));
-        LinearLayout.LayoutParams hubParams = new LinearLayout.LayoutParams(-1, dp(46));
-        hubParams.setMargins(dp(16), dp(1), dp(16), dp(12));
-        root.addView(studyHub, hubParams);
+        LinearLayout studySection = new LinearLayout(this);
+        studySection.setOrientation(LinearLayout.VERTICAL);
+        studySection.setPadding(dp(16), dp(2), dp(16), dp(12));
+        TextView studyTitle = text("STUDY WORKSPACE", 11, 0xFF7A8495, true);
+        studySection.addView(studyTitle);
+
+        LinearLayout studyRow = new LinearLayout(this);
+        studyRow.setGravity(Gravity.CENTER_VERTICAL);
+
+        Button toolsButton = styledButton("Study Tools", true);
+        toolsButton.setOnClickListener(v -> startActivity(new Intent(this, StudyToolsActivity.class)));
+        studyRow.addView(toolsButton, new LinearLayout.LayoutParams(0, dp(46), 1f));
+
+        Button hubButton = styledButton("Study Hub", false);
+        hubButton.setOnClickListener(v -> startActivity(new Intent(this, StudyHubActivity.class)));
+        LinearLayout.LayoutParams hubButtonParams = new LinearLayout.LayoutParams(0, dp(46), 1f);
+        hubButtonParams.setMargins(dp(9), 0, 0, 0);
+        studyRow.addView(hubButton, hubButtonParams);
+
+        studySection.addView(studyRow);
+        TextView featureHint = text(
+                "Study Tools: marks • recall • ghost compare • exam practice • experiment pages • analytics • utilities",
+                11, 0xFF6B7280, false
+        );
+        featureHint.setPadding(dp(2), dp(7), dp(2), 0);
+        studySection.addView(featureHint);
+        root.addView(studySection);
 
         TextView section = text("MY NOTEBOOKS", 11, 0xFF7A8495, true);
         section.setPadding(dp(17), dp(2), dp(17), dp(7));
@@ -225,12 +248,12 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
         search.addTextChangedListener(new android.text.TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
             @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
-                String q = s.toString().trim().toLowerCase();
+                String q = s.toString().trim().toLowerCase(Locale.ROOT);
                 list.removeAllViews();
                 for (NotebookStore.NotebookMeta notebook : store.list()) {
                     if (q.isEmpty()
-                            || notebook.title.toLowerCase().contains(q)
-                            || notebook.subject.toLowerCase().contains(q)) {
+                            || notebook.title.toLowerCase(Locale.ROOT).contains(q)
+                            || notebook.subject.toLowerCase(Locale.ROOT).contains(q)) {
                         addNotebookCard(list, notebook);
                     }
                 }
@@ -261,7 +284,12 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
         labels.setOrientation(LinearLayout.VERTICAL);
 
         TextView title = text(notebook.title, 19, Color.rgb(23, 32, 51), true);
-        TextView info = text(notebook.subject + "  •  " + notebook.pages.size() + " page" + (notebook.pages.size() == 1 ? "" : "s"), 13, 0xFF6E7788, false);
+        int openMarks = store.countStudyMarks(notebook, null, true);
+        TextView info = text(
+                notebook.subject + "  •  " + notebook.pages.size() + " page" + (notebook.pages.size() == 1 ? "" : "s") +
+                        (openMarks > 0 ? "  •  " + openMarks + " open marks" : ""),
+                13, 0xFF6E7788, false
+        );
         labels.addView(title);
         labels.addView(info);
         row.addView(labels, new LinearLayout.LayoutParams(0, -2, 1f));
