@@ -579,6 +579,8 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
         if (currentNotebook == null || canvasView == null) return;
         try {
             NotebookStore.PageMeta page = currentNotebook.pages.get(currentPageIndex);
+            flushPendingFeatureStroke();
+            store.flushPageActivity(page.id);
             if (canvasView.getInkBitmap() != null) {
                 store.savePageBitmap(page.id, canvasView.getInkBitmap());
             }
@@ -1135,7 +1137,7 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
             currentPageIndex = currentNotebook.pages.size() - 1;
             try { store.save(currentNotebook); } catch (Exception ignored) {}
             loadCurrentPage();
-            canvasView.addText("Question: " + q, 145f, 155f);
+            canvasView.addText("Question: " + q, 145f, 145f);
             startExamTimer(timeMinutes);
             dialog.dismiss();
         }));
