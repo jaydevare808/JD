@@ -93,11 +93,53 @@ public final class NotebookStore {
         }
     }
 
+    public static final class RecallRegion {
+        public String id;
+        public String pageId;
+        public float left;
+        public float top;
+        public float right;
+        public float bottom;
+        public String label;
+        public long createdAt;
+
+        public RecallRegion(String id, String pageId, float left, float top,
+                            float right, float bottom, String label, long createdAt) {
+            this.id = id;
+            this.pageId = pageId;
+            this.left = left;
+            this.top = top;
+            this.right = right;
+            this.bottom = bottom;
+            this.label = label == null ? "" : label;
+            this.createdAt = createdAt;
+        }
+    }
+
+    public static final class DailyStudy {
+        public String date;
+        public long activeMs;
+        public int strokes;
+        public int pages;
+
+        public DailyStudy copy() {
+            DailyStudy copy = new DailyStudy();
+            copy.date = date;
+            copy.activeMs = activeMs;
+            copy.strokes = strokes;
+            copy.pages = pages;
+            return copy;
+        }
+    }
+
     public static final class NotebookMeta {
         public String id;
         public String title;
         public String subject;
         public long updatedAt;
+        // A local PIN gate. The notebook content remains inside PaperNote's private app storage.
+        public String pinSalt = "";
+        public String pinHash = "";
         public final ArrayList<PageMeta> pages = new ArrayList<>();
     }
 
@@ -298,6 +340,247 @@ public final class NotebookStore {
         return meta;
     }
 
+    public synchronized boolean hasNotebookPin(NotebookMeta notebook) {
+        return notebook != null && notebook.pinHash != null && !notebook.pinHash.isEmpty();
+    }
+
+    public synchronized void setNotebookPin(NotebookMeta notebook, String pin) throws Exception {
+        if (notebook == null) throw new IllegalArgumentException("Notebook required");
+        if (pin == null || !pin.matches("\\d{4,8}")) {
+            throw new IllegalArgumentException("PIN must contain 4 to 8 digits");
+        }
+        byte[] salt = new byte[16];
+        new java.security.SecureRandom().nextBytes(salt);
+        notebook.pinSalt = android.util.Base64.encodeToString(salt, android.util.Base64.NO_WRAP);
+        notebook.pinHash = hashPin(pin, salt);
+        save(notebook);
+    }
+
+    public synchronized void clearNotebookPin(NotebookMeta notebook) throws Exception {
+        if (notebook == null) return;
+        notebook.pinSalt = "";
+        notebook.pinHash = "";
+        save(notebook);
+    }
+
+    public synchronized boolean verifyNotebookPin(NotebookMeta notebook, String pin) {
+        if (!hasNotebookPin(notebook) || pin == null) return false;
+        try {
+            byte[] salt = android.util.Base64.decode(notebook.pinSalt, android.util.Base64.NO_WRAP);
+            byte[] candidate = hexToBytes(hashPin(pin, salt));
+            byte[] expected = hexToBytes(notebook.pinHash);
+            return candidate.length == expected.length &&
+                    java.security.MessageDigest.isEqual(candidate, expected);
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    private static String hashPin(String pin, byte[] salt) throws Exception {
+        java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
+        digest.update(salt);
+        digest.update(pin.getBytes(StandardCharsets.UTF_8));
+        byte[] value = digest.digest();
+        StringBuilder out = new StringBuilder(value.length * 2);
+        for (byte b : value) out.append(String.format(java.util.Locale.US, "%02x", b & 0xff));
+        return out.toString();
+    }
+
+    private static byte[] hexToBytes(String hex) {
+        int len = hex == null ? 0 : hex.length();
+        if ((len & 1) != 0) return new byte[0];
+        byte[] out = new byte[len / 2];
+        for (int i = 0; i < out.length; i++) {
+            out[i] = (byte) Integer.parseInt(hex.substring(i * 2, i * 2 + 2), 16);
+        }
+        return out;
+    }
+
+    public synchronized List<RecallRegion> getRecallRegions(String pageId) {
+        ArrayList<RecallRegion> result = new ArrayList<>();
+        JSONArray regions = studyRoot.optJSONArray("recallRegions");
+        if (regions == null) return result;
+        for (int i = 0; i < regions.length(); i++) {
+            JSONObject item = regions.optJSONObject(i);
+            if (item == null || !pageId.equals(item.optString("pageId"))) continue;
+            result.add(parseRecallRegion(item));
+        }
+        result.sort(Comparator.comparingLong(r -> r.createdAt));
+        return result;
+    }
+
+    public synchronized RecallRegion addRecallRegion(String pageId, float left, float top,
+                                                      float right, float bottom, String label) throws Exception {
+        float l = Math.max(0f, Math.min(left, right));
+        float t = Math.max(0f, Math.min(top, bottom));
+        float r = Math.min(PaperCanvasView.PAGE_WIDTH, Math.max(left, right));
+        float b = Math.min(PaperCanvasView.PAGE_HEIGHT, Math.max(top, bottom));
+        if (r - l < 24f || b - t < 24f) throw new IllegalArgumentException("Recall area is too small");
+
+        JSONArray regions = studyRoot.optJSONArray("recallRegions");
+        if (regions == null) {
+            regions = new JSONArray();
+            studyRoot.put("recallRegions", regions);
+        }
+        RecallRegion region = new RecallRegion(
+                UUID.randomUUID().toString(), pageId, l, t, r, b,
+                label == null ? "" : label.trim(), System.currentTimeMillis()
+        );
+        regions.put(recallRegionJson(region));
+        saveStudyRoot();
+        return region;
+    }
+
+    public synchronized void deleteRecallRegion(String pageId, String regionId) throws Exception {
+        JSONArray regions = studyRoot.optJSONArray("recallRegions");
+        if (regions == null) return;
+        JSONArray kept = new JSONArray();
+        for (int i = 0; i < regions.length(); i++) {
+            JSONObject item = regions.optJSONObject(i);
+            if (item == null) continue;
+            if (!(pageId.equals(item.optString("pageId")) && regionId.equals(item.optString("id")))) {
+                kept.put(item);
+            }
+        }
+        studyRoot.put("recallRegions", kept);
+        saveStudyRoot();
+    }
+
+    public synchronized void clearRecallRegions(String pageId) throws Exception {
+        JSONArray regions = studyRoot.optJSONArray("recallRegions");
+        if (regions == null) return;
+        JSONArray kept = new JSONArray();
+        for (int i = 0; i < regions.length(); i++) {
+            JSONObject item = regions.optJSONObject(i);
+            if (item != null && !pageId.equals(item.optString("pageId"))) kept.put(item);
+        }
+        studyRoot.put("recallRegions", kept);
+        saveStudyRoot();
+    }
+
+    public synchronized List<DailyStudy> getDailyStudy(int days) {
+        ArrayList<DailyStudy> result = new ArrayList<>();
+        int count = Math.max(1, Math.min(days, 60));
+        java.text.SimpleDateFormat format =
+                new java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US);
+        format.setTimeZone(java.util.TimeZone.getDefault());
+        java.util.Calendar calendar = java.util.Calendar.getInstance();
+        JSONArray daily = studyRoot.optJSONArray("dailyStudy");
+        for (int i = count - 1; i >= 0; i--) {
+            java.util.Calendar day = (java.util.Calendar) calendar.clone();
+            day.add(java.util.Calendar.DAY_OF_YEAR, -i);
+            String key = format.format(day.getTime());
+            DailyStudy value = new DailyStudy();
+            value.date = key;
+            if (daily != null) {
+                for (int j = 0; j < daily.length(); j++) {
+                    JSONObject item = daily.optJSONObject(j);
+                    if (item != null && key.equals(item.optString("date"))) {
+                        value.activeMs = item.optLong("activeMs", 0L);
+                        value.strokes = item.optInt("strokes", 0);
+                        value.pages = item.optInt("pages", 0);
+                        break;
+                    }
+                }
+            }
+            result.add(value);
+        }
+        return result;
+    }
+
+    private void recordDailyDelta(String pageId, long activeMs, int strokes) throws Exception {
+        JSONArray daily = studyRoot.optJSONArray("dailyStudy");
+        if (daily == null) {
+            daily = new JSONArray();
+            studyRoot.put("dailyStudy", daily);
+        }
+        java.text.SimpleDateFormat format =
+                new java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US);
+        format.setTimeZone(java.util.TimeZone.getDefault());
+        String today = format.format(new java.util.Date());
+        JSONObject target = null;
+        for (int i = 0; i < daily.length(); i++) {
+            JSONObject item = daily.optJSONObject(i);
+            if (item != null && today.equals(item.optString("date"))) {
+                target = item;
+                break;
+            }
+        }
+        if (target == null) {
+            target = new JSONObject();
+            target.put("date", today);
+            target.put("activeMs", 0L);
+            target.put("strokes", 0);
+            target.put("pages", 0);
+            daily.put(target);
+        }
+        target.put("activeMs", target.optLong("activeMs", 0L) + Math.max(0L, activeMs));
+        target.put("strokes", target.optInt("strokes", 0) + Math.max(0, strokes));
+        if (activeMs > 0L || strokes > 0) target.put("pages", target.optInt("pages", 0) + 1);
+        while (daily.length() > 90) daily.remove(0);
+    }
+
+    public synchronized String getPaperBridgeCode(String pageId) {
+        try {
+            java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
+            byte[] bytes = digest.digest(pageId.getBytes(StandardCharsets.UTF_8));
+            StringBuilder out = new StringBuilder(8);
+            for (byte b : bytes) {
+                out.append(String.format(java.util.Locale.US, "%02X", b & 0xff));
+                if (out.length() >= 8) break;
+            }
+            return out.toString();
+        } catch (Exception ignored) {
+            return pageId == null ? "UNKNOWN" : pageId.substring(0, Math.min(8, pageId.length())).toUpperCase(java.util.Locale.US);
+        }
+    }
+
+    public synchronized JSONObject exportPaperBridge(NotebookMeta notebook) throws Exception {
+        JSONObject root = new JSONObject();
+        root.put("format", "PaperNoteBridge");
+        root.put("version", 1);
+        root.put("notebookTitle", notebook == null ? "" : notebook.title);
+        JSONArray pages = new JSONArray();
+        if (notebook != null) {
+            for (int i = 0; i < notebook.pages.size(); i++) {
+                PageMeta page = notebook.pages.get(i);
+                JSONObject item = new JSONObject();
+                item.put("index", i);
+                item.put("title", page.title);
+                item.put("code", getPaperBridgeCode(page.id));
+                pages.put(item);
+            }
+        }
+        root.put("pages", pages);
+        return root;
+    }
+
+    public synchronized RecallRegion parseRecallRegion(JSONObject item) {
+        return new RecallRegion(
+                item.optString("id", UUID.randomUUID().toString()),
+                item.optString("pageId"),
+                (float) item.optDouble("left", 0),
+                (float) item.optDouble("top", 0),
+                (float) item.optDouble("right", 100),
+                (float) item.optDouble("bottom", 100),
+                item.optString("label", ""),
+                item.optLong("createdAt", System.currentTimeMillis())
+        );
+    }
+
+    private JSONObject recallRegionJson(RecallRegion region) throws Exception {
+        JSONObject item = new JSONObject();
+        item.put("id", region.id);
+        item.put("pageId", region.pageId);
+        item.put("left", region.left);
+        item.put("top", region.top);
+        item.put("right", region.right);
+        item.put("bottom", region.bottom);
+        item.put("label", region.label);
+        item.put("createdAt", region.createdAt);
+        return item;
+    }
+
     public synchronized List<StudyMark> getStudyMarks(String pageId) {
         ArrayList<StudyMark> result = new ArrayList<>();
         JSONArray marks = studyRoot.optJSONArray("marks");
@@ -391,6 +674,7 @@ public final class NotebookStore {
             value.lastActivityAt = now;
             value.lastStudiedAt = now;
             writePageStats(statsObject, value);
+            recordDailyDelta(pageId, Math.min(delta, 15000L), 0);
             saveStudyRoot();
         } catch (Exception ignored) {
         }
@@ -408,6 +692,7 @@ public final class NotebookStore {
             value.lastActivityAt = 0L;
             value.lastStudiedAt = now;
             writePageStats(statsObject, value);
+            recordDailyDelta(pageId, Math.min(delta, 15000L), 0);
             saveStudyRoot();
         } catch (Exception ignored) {
         }
@@ -421,7 +706,9 @@ public final class NotebookStore {
             int gx = Math.max(0, Math.min(5, (int) (pageX / PaperCanvasView.PAGE_WIDTH * 6f)));
             int gy = Math.max(0, Math.min(7, (int) (pageY / PaperCanvasView.PAGE_HEIGHT * 8f)));
             value.heatmap[gy * 6 + gx]++;
+            value.lastStudiedAt = System.currentTimeMillis();
             writePageStats(statsObject, value);
+            recordDailyDelta(pageId, 0L, 1);
             saveStudyRoot();
         } catch (Exception ignored) {
         }
@@ -545,6 +832,20 @@ public final class NotebookStore {
             }
         }
         root.put("links", linksOut);
+
+        JSONArray regionsOut = new JSONArray();
+        JSONArray regions = studyRoot.optJSONArray("recallRegions");
+        if (regions != null) {
+            for (int i = 0; i < regions.length(); i++) {
+                JSONObject item = regions.optJSONObject(i);
+                if (item == null || !pageIndex.containsKey(item.optString("pageId"))) continue;
+                JSONObject copy = new JSONObject(item.toString());
+                copy.remove("id");
+                copy.put("pageIndex", pageIndex.get(item.optString("pageId")));
+                regionsOut.put(copy);
+            }
+        }
+        root.put("recallRegions", regionsOut);
         return root.toString();
     }
 
@@ -616,6 +917,31 @@ public final class NotebookStore {
                 links.put(out);
             }
         }
+        JSONArray regionsIn = data.optJSONArray("recallRegions");
+        if (regionsIn != null) {
+            JSONArray regions = studyRoot.optJSONArray("recallRegions");
+            if (regions == null) {
+                regions = new JSONArray();
+                studyRoot.put("recallRegions", regions);
+            }
+            for (int i = 0; i < regionsIn.length(); i++) {
+                JSONObject item = regionsIn.optJSONObject(i);
+                if (item == null) continue;
+                int index = item.optInt("pageIndex", -1);
+                if (index < 0 || index >= notebook.pages.size()) continue;
+                RecallRegion region = new RecallRegion(
+                        UUID.randomUUID().toString(),
+                        notebook.pages.get(index).id,
+                        (float) item.optDouble("left", 0),
+                        (float) item.optDouble("top", 0),
+                        (float) item.optDouble("right", 100),
+                        (float) item.optDouble("bottom", 100),
+                        item.optString("label", ""),
+                        item.optLong("createdAt", System.currentTimeMillis())
+                );
+                regions.put(recallRegionJson(region));
+            }
+        }
         saveStudyRoot();
     }
 
@@ -659,6 +985,16 @@ public final class NotebookStore {
                 }
             }
             studyRoot.put("links", linksOut);
+
+            JSONArray regionsOut = new JSONArray();
+            JSONArray regions = studyRoot.optJSONArray("recallRegions");
+            if (regions != null) {
+                for (int i = 0; i < regions.length(); i++) {
+                    JSONObject item = regions.optJSONObject(i);
+                    if (item != null && !pageIds.contains(item.optString("pageId"))) regionsOut.put(item);
+                }
+            }
+            studyRoot.put("recallRegions", regionsOut);
             saveStudyRoot();
         } catch (Exception ignored) {
         }
@@ -830,6 +1166,10 @@ public final class NotebookStore {
         root.put("title", meta.title);
         root.put("subject", meta.subject);
         root.put("updatedAt", meta.updatedAt);
+        if (meta.pinSalt != null && !meta.pinSalt.isEmpty() && meta.pinHash != null && !meta.pinHash.isEmpty()) {
+            root.put("pinSalt", meta.pinSalt);
+            root.put("pinHash", meta.pinHash);
+        }
 
         JSONArray pages = new JSONArray();
         for (PageMeta page : meta.pages) {
@@ -850,6 +1190,8 @@ public final class NotebookStore {
         meta.title = root.optString("title", "Notebook");
         meta.subject = root.optString("subject", "General Study");
         meta.updatedAt = root.optLong("updatedAt", 0L);
+        meta.pinSalt = root.optString("pinSalt", "");
+        meta.pinHash = root.optString("pinHash", "");
 
         JSONArray pages = root.optJSONArray("pages");
         if (pages != null) {
