@@ -18,6 +18,10 @@
             android:exported="false"
             android:configChanges="orientation|screenSize|keyboardHidden" />
         <activity
+            android:name=".StudyHubActivity"
+            android:screenOrientation="unspecified"
+            android:exported="false" />
+        <activity
             android:name=".MainActivity"
             android:screenOrientation="unspecified"
             android:exported="true"

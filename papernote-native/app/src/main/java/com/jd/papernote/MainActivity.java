@@ -197,6 +197,12 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
         chipsScroll.addView(chips);
         root.addView(chipsScroll);
 
+        Button studyHub = styledButton("Study Hub  •  progress, doubts & mistakes", false);
+        studyHub.setOnClickListener(v -> startActivity(new Intent(this, StudyHubActivity.class)));
+        LinearLayout.LayoutParams hubParams = new LinearLayout.LayoutParams(-1, dp(46));
+        hubParams.setMargins(dp(16), dp(1), dp(16), dp(12));
+        root.addView(studyHub, hubParams);
+
         TextView section = text("MY NOTEBOOKS", 11, 0xFF7A8495, true);
         section.setPadding(dp(17), dp(2), dp(17), dp(7));
         root.addView(section);

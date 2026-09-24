@@ -17,6 +17,7 @@ import android.view.View;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Deque;
 
 public final class PaperCanvasView extends View {
@@ -28,6 +29,10 @@ public final class PaperCanvasView extends View {
     public static final String PAPER_GRAPH = "graph";
     public static final String PAPER_DOT = "dot";
     public static final String PAPER_MATH = "math";
+    public static final String PAPER_EXAM_2 = "exam_2";
+    public static final String PAPER_EXAM_3 = "exam_3";
+    public static final String PAPER_EXAM_4 = "exam_4";
+    public static final String PAPER_EXPERIMENT = "experiment";
 
     public static final int TOOL_PEN = 0;
     public static final int TOOL_HIGHLIGHTER = 1;
@@ -42,6 +47,27 @@ public final class PaperCanvasView extends View {
         void onRequestText(float pageX, float pageY);
     }
 
+    public interface InteractionListener {
+        void onStrokeStarted(float pageX, float pageY, int tool);
+        void onPinPlaced(float pageX, float pageY);
+    }
+
+    public static final class StudyPin {
+        public final float x;
+        public final float y;
+        public final String type;
+        public final String label;
+        public final boolean resolved;
+
+        public StudyPin(float x, float y, String type, String label, boolean resolved) {
+            this.x = x;
+            this.y = y;
+            this.type = type;
+            this.label = label;
+            this.resolved = resolved;
+        }
+    }
+
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.DITHER_FLAG);
     private final Paint bitmapPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
     private final RectF pageRect = new RectF();
@@ -51,7 +77,13 @@ public final class PaperCanvasView extends View {
     private Bitmap inkBitmap;
     private Bitmap baseBitmap;
     private Listener listener;
+    private InteractionListener interactionListener;
     private SoundEngine soundEngine;
+    private List<StudyPin> studyPins = new ArrayList<>();
+    private Bitmap ghostBitmap;
+    private float ghostAlpha = 0f;
+    private boolean recallMode = false;
+    private boolean placingPin = false;
 
     private int tool = TOOL_PEN;
     private int inkColor = Color.rgb(24, 35, 51);
@@ -124,6 +156,63 @@ public final class PaperCanvasView extends View {
 
     public void setListener(Listener listener) {
         this.listener = listener;
+    }
+
+    public void setInteractionListener(InteractionListener listener) {
+        this.interactionListener = listener;
+    }
+
+    public void setStudyPins(List<StudyPin> pins) {
+        this.studyPins = pins == null ? new ArrayList<>() : new ArrayList<>(pins);
+        invalidate();
+    }
+
+    public void setGhostBitmap(Bitmap bitmap, float alpha) {
+        if (ghostBitmap != null && ghostBitmap != bitmap && !ghostBitmap.isRecycled()) {
+            ghostBitmap.recycle();
+        }
+        ghostBitmap = bitmap;
+        ghostAlpha = Math.max(0f, Math.min(1f, alpha));
+        invalidate();
+    }
+
+    public void clearGhostBitmap() {
+        if (ghostBitmap != null && !ghostBitmap.isRecycled()) ghostBitmap.recycle();
+        ghostBitmap = null;
+        ghostAlpha = 0f;
+        invalidate();
+    }
+
+    public boolean hasGhostBitmap() {
+        return ghostBitmap != null && !ghostBitmap.isRecycled();
+    }
+
+    public void setRecallMode(boolean enabled) {
+        recallMode = enabled;
+        cancelLiveStroke();
+        invalidate();
+    }
+
+    public boolean isRecallMode() {
+        return recallMode;
+    }
+
+    public void centerOnPagePoint(float pageX, float pageY) {
+        writeMode = false;
+        zoom = 1.65f;
+        float scale = currentScale();
+        float pageW = PAGE_WIDTH * scale;
+        float pageH = PAGE_HEIGHT * scale;
+        panX = pageW * 0.5f - pageX * scale;
+        panY = pageH * 0.5f - pageY * scale;
+        invalidate();
+    }
+
+    public void beginPinPlacement() {
+        placingPin = true;
+        setWriteMode(true);
+        cancelLiveStroke();
+        invalidate();
     }
 
     public void setSoundEngine(SoundEngine soundEngine) {
@@ -216,6 +305,7 @@ public final class PaperCanvasView extends View {
         baseBitmap = inkBitmap.copy(Bitmap.Config.ARGB_8888, true);
         undo.clear();
         redo.clear();
+        clearGhostBitmap();
         resetViewport();
         invalidate();
     }
@@ -377,8 +467,52 @@ public final class PaperCanvasView extends View {
 
         drawPaperBackground(canvas, paperType, marginEnabled);
 
-        if (inkBitmap != null) {
+        if (!recallMode && ghostBitmap != null && !ghostBitmap.isRecycled() && ghostAlpha > 0f) {
+            Paint ghostPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+            ghostPaint.setAlpha(Math.round(255f * ghostAlpha));
+            canvas.drawBitmap(ghostBitmap, 0f, 0f, ghostPaint);
+        }
+
+        if (!recallMode && inkBitmap != null) {
             canvas.drawBitmap(inkBitmap, 0f, 0f, bitmapPaint);
+        }
+
+        if (!recallMode && studyPins != null) {
+            Paint pinFill = new Paint(Paint.ANTI_ALIAS_FLAG);
+            Paint pinRing = new Paint(Paint.ANTI_ALIAS_FLAG);
+            pinRing.setStyle(Paint.Style.STROKE);
+            pinRing.setStrokeWidth(5f);
+            pinRing.setColor(Color.WHITE);
+            float pinRadius = 18f;
+            for (StudyPin pin : studyPins) {
+                if (pin.resolved) {
+                    pinFill.setColor(0xFF7F8794);
+                    pinFill.setAlpha(150);
+                } else if (NotebookStore.StudyMark.DOUBT.equals(pin.type)) {
+                    pinFill.setColor(0xFFE58A23);
+                    pinFill.setAlpha(255);
+                } else if (NotebookStore.StudyMark.MISTAKE.equals(pin.type)) {
+                    pinFill.setColor(0xFFD64545);
+                    pinFill.setAlpha(255);
+                } else if (NotebookStore.StudyMark.IMPORTANT.equals(pin.type)) {
+                    pinFill.setColor(0xFFE1B21D);
+                    pinFill.setAlpha(255);
+                } else {
+                    pinFill.setColor(0xFF3D6FE8);
+                    pinFill.setAlpha(255);
+                }
+                canvas.drawCircle(pin.x, pin.y, pinRadius, pinFill);
+                canvas.drawCircle(pin.x, pin.y, pinRadius + 3f, pinRing);
+                if (pin.label != null && !pin.label.isEmpty()) {
+                    Paint labelPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+                    labelPaint.setColor(Color.WHITE);
+                    labelPaint.setTextSize(18f);
+                    labelPaint.setTypeface(Typeface.DEFAULT_BOLD);
+                    labelPaint.setTextAlign(Paint.Align.CENTER);
+                    String shortLabel = pin.label.length() > 2 ? pin.label.substring(0, 2) : pin.label;
+                    canvas.drawText(shortLabel, pin.x, pin.y + 6f, labelPaint);
+                }
+            }
         }
 
         if (liveStrokeActive && tool != TOOL_ERASER
@@ -474,6 +608,19 @@ public final class PaperCanvasView extends View {
 
     @Override
     public boolean onTouchEvent(MotionEvent event) {
+        if (placingPin) {
+            if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
+                screenToPage(event.getX(), event.getY(), pagePoint);
+                placingPin = false;
+                if (interactionListener != null) {
+                    interactionListener.onPinPlaced(pagePoint[0], pagePoint[1]);
+                }
+                invalidate();
+                return true;
+            }
+            return true;
+        }
+        if (recallMode) return true;
         if (!writeMode) return handlePanTouch(event);
         return handleWriteTouch(event);
     }
@@ -676,6 +823,9 @@ public final class PaperCanvasView extends View {
         liveCurveEndY = y;
         liveStrokeActive = true;
         liveStrokeMoved = false;
+        if (interactionListener != null) {
+            interactionListener.onStrokeStarted(x, y, tool);
+        }
     }
 
     private void appendLivePoint(float rawX, float rawY) {
@@ -1058,6 +1208,41 @@ public final class PaperCanvasView extends View {
             grid.setStrokeWidth(2f);
             for (int y = 80; y < PAGE_HEIGHT; y += 248) {
                 canvas.drawLine(0, y, PAGE_WIDTH, y, grid);
+            }
+        } else if (PAPER_EXAM_2.equals(type) || PAPER_EXAM_3.equals(type) || PAPER_EXAM_4.equals(type)) {
+            for (int y = 205; y < PAGE_HEIGHT; y += 70) {
+                canvas.drawLine(132, y, PAGE_WIDTH - 70, y, grid);
+            }
+            Paint header = new Paint(Paint.ANTI_ALIAS_FLAG);
+            header.setColor(Color.rgb(88, 96, 112));
+            header.setTextSize(30f);
+            header.setTypeface(Typeface.DEFAULT_BOLD);
+            String marks = PAPER_EXAM_2.equals(type) ? "2 MARK ANSWER" :
+                    PAPER_EXAM_3.equals(type) ? "3 MARK ANSWER" : "4 MARK ANSWER";
+            canvas.drawText(marks, 145, 72, header);
+        } else if (PAPER_EXPERIMENT.equals(type)) {
+            Paint title = new Paint(Paint.ANTI_ALIAS_FLAG);
+            title.setColor(Color.rgb(75, 84, 102));
+            title.setTextSize(28f);
+            title.setTypeface(Typeface.DEFAULT_BOLD);
+            canvas.drawText("SCIENCE EXPERIMENT", 145, 68, title);
+            String[] sections = {"Aim", "Apparatus / Materials", "Procedure", "Observations", "Calculations", "Result", "Precautions"};
+            float top = 120f;
+            Paint line = new Paint(Paint.ANTI_ALIAS_FLAG);
+            line.setColor(Color.rgb(218, 223, 231));
+            line.setStrokeWidth(1.5f);
+            for (String section : sections) {
+                Paint label = new Paint(Paint.ANTI_ALIAS_FLAG);
+                label.setColor(Color.rgb(88, 96, 112));
+                label.setTextSize(22f);
+                label.setTypeface(Typeface.DEFAULT_BOLD);
+                canvas.drawText(section, 145, top, label);
+                top += 20f;
+                for (int i = 0; i < 3; i++) {
+                    canvas.drawLine(145, top + i * 58f, PAGE_WIDTH - 90, top + i * 58f, line);
+                }
+                top += 205f;
+                if (top > PAGE_HEIGHT - 140) break;
             }
         }
 
