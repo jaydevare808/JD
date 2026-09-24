@@ -1013,7 +1013,7 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
         pendingRecallBottom = bottom;
 
         EditText label = new EditText(this);
-        label.setHint("Optional label, e.g. "Ohm's law"");
+        label.setHint("Optional label, e.g. Ohm's law");
         new AlertDialog.Builder(this)
                 .setTitle("Name hidden area")
                 .setView(label)
