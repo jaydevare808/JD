@@ -203,8 +203,8 @@ public final class PaperCanvasView extends View {
         float scale = currentScale();
         float pageW = PAGE_WIDTH * scale;
         float pageH = PAGE_HEIGHT * scale;
-        panX = getWidth() * 0.5f - (pageW * 0.5f + pageX * scale);
-        panY = getHeight() * 0.5f - (pageH * 0.5f + pageY * scale);
+        panX = pageW * 0.5f - pageX * scale;
+        panY = pageH * 0.5f - pageY * scale;
         invalidate();
     }
 
