@@ -529,6 +529,11 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
             }
 
             @Override
+            public void onPinTapped(float pageX, float pageY) {
+                showNearestStudyMark(pageX, pageY);
+            }
+
+            @Override
             public void onRecallRegionPlaced(float left, float top, float right, float bottom) {
                 beginRecallRegionLabel(left, top, right, bottom);
             }
@@ -982,6 +987,8 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
                 "Start / reveal recall",
                 "Add hidden area",
                 "Clear hidden areas",
+                "Reveal all",
+                "Reset revealed areas",
                 "List hidden areas"
         };
         new AlertDialog.Builder(this)
@@ -1009,6 +1016,14 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
                             }
                             break;
                         case 3:
+                            canvasView.revealAllRecallRegions();
+                            toast("All recall areas revealed for this session");
+                            break;
+                        case 4:
+                            canvasView.resetRecallReveals();
+                            toast("All recall areas hidden again");
+                            break;
+                        case 5:
                             showRecallRegionList();
                             break;
                     }
@@ -1322,6 +1337,73 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
         } catch (Exception e) {
             toast("Could not place study mark");
         }
+    }
+
+    private void showNearestStudyMark(float pageX, float pageY) {
+        if (currentNotebook == null || currentNotebook.pages.isEmpty()) return;
+        NotebookStore.StudyMark nearest = null;
+        float bestDistance = Float.MAX_VALUE;
+        String pageId = currentNotebook.pages.get(currentPageIndex).id;
+        for (NotebookStore.StudyMark mark : store.getStudyMarks(pageId)) {
+            float dx = mark.x - pageX;
+            float dy = mark.y - pageY;
+            float distance = dx * dx + dy * dy;
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                nearest = mark;
+            }
+        }
+        if (nearest == null || bestDistance > 32f * 32f) return;
+
+        final NotebookStore.StudyMark marker = nearest;
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(8), dp(4), dp(8), 0);
+        box.addView(text(
+                studyTypeLabel(marker.type) + (marker.resolved ? "  •  Resolved" : "  •  Open"),
+                15, 0xFF182339, true
+        ));
+        box.addView(text(
+                marker.note == null || marker.note.isEmpty() ? "No note attached." : marker.note,
+                13, 0xFF5B6473, false
+        ));
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("Study marker")
+                .setView(box)
+                .setNegativeButton("Close", null)
+                .setNeutralButton(marker.resolved ? "Reopen" : "Resolve", null)
+                .setPositiveButton("Delete", null)
+                .create();
+
+        dialog.setOnShowListener(v -> {
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(click -> {
+                try {
+                    store.setStudyMarkResolved(currentNotebook.pages.get(currentPageIndex).id,
+                            marker.id, !marker.resolved);
+                    refreshStudyPins();
+                    dialog.dismiss();
+                } catch (Exception e) {
+                    toast("Could not update marker");
+                }
+            });
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(click -> {
+                new AlertDialog.Builder(this)
+                        .setTitle("Delete marker?")
+                        .setMessage("This removes the " + studyTypeLabel(marker.type).toLowerCase(Locale.ROOT) + " pin from this page.")
+                        .setNegativeButton("Keep", null)
+                        .setPositiveButton("Delete", (d, w) -> {
+                            try {
+                                store.deleteStudyMark(currentNotebook.pages.get(currentPageIndex).id, marker.id);
+                                refreshStudyPins();
+                                dialog.dismiss();
+                            } catch (Exception e) {
+                                toast("Could not delete marker");
+                            }
+                        }).show();
+            });
+        });
+        dialog.show();
     }
 
     private void refreshStudyPins() {
