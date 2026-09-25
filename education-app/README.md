@@ -33,3 +33,5 @@ The editor uses a single activity instead of opening multiple screens while writ
 Palm rejection is implemented at the Android MotionEvent layer. In strict mode, only TOOL_TYPE_STYLUS and TOOL_TYPE_ERASER pointers are accepted as writing input. Finger and palm contacts are consumed but never become the active drawing pointer, so a palm can rest on the display while a stylus continues the stroke.
 
 The app intentionally does not include cloud sync, bundled AI, PDF import, image insertion, shapes, or other secondary features.
+
+CI verification build: StudyNote 1.2.0.
