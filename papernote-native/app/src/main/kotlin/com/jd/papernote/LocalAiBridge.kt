@@ -12,6 +12,8 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 object LocalAiBridge {
+    private val lock = Any()
+
     interface Callback {
         fun onReady()
         fun onResult(text: String, tokensPerSecond: Float)
