@@ -1,0 +1,14 @@
+PaperNote AI model notices
+
+SmolLM2 360M Instruct, Q4_K_M GGUF
+Source: Hugging Face, bartowski/SmolLM2-360M-Instruct-GGUF
+Model card license: Apache-2.0
+This quantized file is used locally by PaperNote AI Lite.
+
+Inference runtime
+llama-android 0.1.1
+Source: ffmpegkit-maintained/llama-android
+License: MIT
+The runtime wraps llama.cpp, which is also MIT licensed.
+
+PaperNote bundles the model for offline on-device inference. The model is an assistive tutor and may produce incorrect answers. Important academic answers should be checked against trusted course material.
