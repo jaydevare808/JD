@@ -20,3 +20,6 @@ Build verification is handled by the repository CI workflow.
 
 
 CI trigger verified.
+
+
+v1.2: real execution backend integration with OneCompiler API and stdin support.
