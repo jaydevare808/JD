@@ -354,18 +354,11 @@ public final class MainActivity extends Activity {
         new AlertDialog.Builder(this)
                 .setTitle("About PaperNote")
                 .setMessage(
-                        "PaperNote is a handwriting-first study notebook.
-
-" +
-                        "• Local notebooks and page data
-" +
-                        "• No account or cloud requirement
-" +
-                        "• Free offline PaperNote AI on supported ARM64 devices
-" +
-                        "• Export and backup are user-controlled
-
-" +
+                        "PaperNote is a handwriting-first study notebook.\n\n" +
+                        "• Local notebooks and page data\n" +
+                        "• No account or cloud requirement\n" +
+                        "• Free offline PaperNote AI on supported ARM64 devices\n" +
+                        "• Export and backup are user-controlled\n\n" +
                         "The editor is designed to stay lightweight while writing."
                 )
                 .setPositiveButton("OK", null)
