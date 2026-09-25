@@ -834,9 +834,7 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
             toast("No AI answer is ready to save.");
             return;
         }
-        String content = "PAPERNOTE AI
-
-" + aiText.trim();
+        String content = "PAPERNOTE AI\\n\\n" + aiText.trim();
         canvasView.addText(content, 145f, 180f);
         toast("AI answer added to this page");
     }
