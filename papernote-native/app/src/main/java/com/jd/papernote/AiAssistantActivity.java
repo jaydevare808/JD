@@ -131,7 +131,7 @@ public final class AiAssistantActivity extends Activity {
             LinearLayout unsupported = card();
             unsupported.addView(text("AI engine unavailable", 16, 0xFF8B2F3A, true));
             unsupported.addView(text(
-                    "This build uses the free ARM64 on-device engine. The notebook and study features still work normally.",
+                    "The offline AI engine requires a 64-bit ARM device. The notebook editor remains available on all supported PaperNote devices.",
                     12, 0xFF5B6473, false));
             body.addView(unsupported, bottomMargin(dp(10)));
         }
