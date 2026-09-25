@@ -226,10 +226,22 @@ public final class PaperCanvasView extends View {
             baseBitmap.recycle();
         }
 
-        inkBitmap = bitmap == null
-                ? Bitmap.createBitmap(PAGE_WIDTH, PAGE_HEIGHT, Bitmap.Config.ARGB_8888)
-                : bitmap;
-        baseBitmap = inkBitmap.copy(Bitmap.Config.ARGB_8888, true);
+        try {
+            inkBitmap = bitmap == null
+                    ? Bitmap.createBitmap(PAGE_WIDTH, PAGE_HEIGHT, Bitmap.Config.ARGB_8888)
+                    : bitmap;
+            baseBitmap = inkBitmap.copy(Bitmap.Config.ARGB_8888, true);
+        } catch (OutOfMemoryError error) {
+            // Keep the activity alive even on a memory-constrained device. A page
+            // loaded without a history baseline remains writable and savable.
+            if (inkBitmap != null && inkBitmap != bitmap && !inkBitmap.isRecycled()) {
+                inkBitmap.recycle();
+            }
+            inkBitmap = bitmap;
+            baseBitmap = null;
+            undo.clear();
+            redo.clear();
+        }
 
         zoom = 1f;
         panX = 0f;
