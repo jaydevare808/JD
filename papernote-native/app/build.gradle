@@ -22,7 +22,7 @@ tasks.register("prepareAiModel") {
             connection.setRequestProperty("User-Agent", "PaperNote-Android-Build/3.0.0")
             connection.setInstanceFollowRedirects(true)
             connection.getInputStream().withCloseable { input ->
-                def tmp = new File(aiAssetsDir, "$aiModelName.part")
+                def tmp = new File(aiAssetsDir, "${aiModelName}.part")
                 tmp.withOutputStream { output ->
                     byte[] buffer = new byte[1024 * 256]
                     long total = 0L
@@ -37,7 +37,7 @@ tasks.register("prepareAiModel") {
                         }
                     }
                 }
-                def downloadedFile = new File(aiAssetsDir, "$aiModelName.part")
+                def downloadedFile = new File(aiAssetsDir, "${aiModelName}.part")
                 if (aiModelFile.exists()) aiModelFile.delete()
                 if (!downloadedFile.renameTo(aiModelFile)) throw new GradleException("Unable to finalize AI model asset")
             }
