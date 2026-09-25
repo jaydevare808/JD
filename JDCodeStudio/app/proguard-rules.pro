@@ -1,0 +1,1 @@
+# JD Code Studio currently ships without code shrinking rules.
