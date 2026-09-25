@@ -308,9 +308,6 @@ public final class NotebookStore {
         return Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
     }
 
-    private static String writeTempAndRead(String ignored) {
-        return ignored;
-    }
 
     private static void writeText(File file, String value) throws Exception {
         try (FileOutputStream out = new FileOutputStream(file)) {
