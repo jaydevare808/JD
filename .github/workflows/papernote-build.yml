@@ -4,14 +4,14 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [main, papernote-native]
+    branches: [main, papernote-native, feature/papernote-3.0-pro-ai]
   workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: papernote-build-${{ github.ref }}
+  group: papernote-build-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -32,6 +32,12 @@ jobs:
         uses: android-actions/setup-android@v4
         with:
           packages: 'platforms;android-36 build-tools;36.0.0'
+
+      - name: Cache PaperNote AI model
+        uses: actions/cache@v4
+        with:
+          path: papernote-native/app/src/main/assets/SmolLM2-135M-Instruct.Q4_K_M.gguf
+          key: papernote-ai-smollm2-135m-8030f04528538d47bda434f6f0bdf3952c40a58123e4d5e755332f23731a868
 
       - name: Setup Gradle 9.6
         uses: gradle/actions/setup-gradle@v6

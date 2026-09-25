@@ -147,6 +147,7 @@ public final class StudyWorkspaceActivity extends Activity {
         addQuick(quick2, "Ghost", "ghost");
         addQuick(quick2, "Exam", "exam");
         addQuick(quick2, "Experiment", "experiment");
+        addQuick(quick2, "AI Tutor", "ai");
         body.addView(quick2, bottomMargin(dp(12)));
 
         body.addView(sectionLabel("REVISION QUEUE"));
@@ -190,6 +191,7 @@ public final class StudyWorkspaceActivity extends Activity {
         body.addView(attention, bottomMargin(dp(12)));
 
         body.addView(sectionLabel("FULL FEATURE SET"));
+        addFeature(body, "AI Tutor", "Use the bundled on-device assistant for explanations, quizzes, flashcards and study planning.", "ai");
         addFeature(body, "Study markers", "Place D / M / ! / R markers at exact page coordinates and attach review notes.", "marks");
         addFeature(body, "Active recall", "Hide the page for self-testing, then reveal it without changing your saved handwriting.", "recall");
         addFeature(body, "Marks-only view", "Inspect study markers without the handwriting underneath. Tap a marker for details.", "marks_view");
@@ -376,6 +378,13 @@ public final class StudyWorkspaceActivity extends Activity {
     private void openEditor(String feature, int pageIndex) {
         NotebookStore.NotebookMeta n = selectedNotebook();
         if (n == null) return;
+        if ("ai".equals(feature)) {
+            Intent aiIntent = new Intent(this, AiAssistantActivity.class);
+            aiIntent.putExtra("notebook_id", n.id);
+            aiIntent.putExtra("page_index", Math.max(0, Math.min(pageIndex, n.pages.size() - 1)));
+            startActivity(aiIntent);
+            return;
+        }
         Intent intent = new Intent(this, EditorActivity.class);
         intent.putExtra("notebook_id", n.id);
         intent.putExtra("page_index", Math.max(0, Math.min(pageIndex, n.pages.size() - 1)));

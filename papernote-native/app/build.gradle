@@ -2,6 +2,66 @@ plugins {
     id 'com.android.application'
 }
 
+import java.security.MessageDigest
+
+def aiModelName = "SmolLM2-135M-Instruct.Q4_K_M.gguf"
+def aiModelUrl = "https://huggingface.co/QuantFactory/SmolLM2-135M-Instruct-GGUF/resolve/main/SmolLM2-135M-Instruct.Q4_K_M.gguf?download=true"
+def aiModelSha256 = "8030f04528538d47bda434f6f0bdf3952c40a58123e4d5e755332f23731a8684"
+def aiAssetsDir = file("$projectDir/src/main/assets")
+def aiModelFile = file("$aiAssetsDir/$aiModelName")
+
+tasks.register("prepareAiModel") {
+    outputs.file(aiModelFile)
+    doLast {
+        aiAssetsDir.mkdirs()
+        if (!aiModelFile.exists() || aiModelFile.length() < 1024L * 1024L) {
+            logger.lifecycle("PaperNote AI: downloading $aiModelName (~105 MB)")
+            def connection = new URL(aiModelUrl).openConnection()
+            connection.setConnectTimeout(60000)
+            connection.setReadTimeout(900000)
+            connection.setRequestProperty("User-Agent", "PaperNote-Android-Build/3.0.0")
+            connection.setInstanceFollowRedirects(true)
+            connection.getInputStream().withCloseable { input ->
+                def tmp = new File(aiAssetsDir, "${aiModelName}.part")
+                tmp.withOutputStream { output ->
+                    byte[] buffer = new byte[1024 * 256]
+                    long total = 0L
+                    int read
+                    long lastReport = System.currentTimeMillis()
+                    while ((read = input.read(buffer)) != -1) {
+                        output.write(buffer, 0, read)
+                        total += read
+                        if (System.currentTimeMillis() - lastReport > 5000L) {
+                            logger.lifecycle("PaperNote AI: downloaded %.1f MB".formatted(total / 1048576d))
+                            lastReport = System.currentTimeMillis()
+                        }
+                    }
+                }
+                def downloadedFile = new File(aiAssetsDir, "${aiModelName}.part")
+                if (aiModelFile.exists()) aiModelFile.delete()
+                if (!downloadedFile.renameTo(aiModelFile)) throw new GradleException("Unable to finalize AI model asset")
+            }
+        }
+
+        def digest = MessageDigest.getInstance("SHA-256")
+        aiModelFile.withInputStream { input ->
+            byte[] buffer = new byte[1024 * 256]
+            int read
+            while ((read = input.read(buffer)) != -1) digest.update(buffer, 0, read)
+        }
+        byte[] digestBytes = digest.digest()
+        def hash = new java.math.BigInteger(1, digestBytes).toString(16).padLeft(64, '0')
+        if (hash != aiModelSha256) {
+            throw new GradleException("AI model SHA-256 mismatch. Expected $aiModelSha256 but got $hash")
+        }
+        logger.lifecycle("PaperNote AI: model verified ($aiModelSha256)")
+    }
+}
+
+tasks.named("preBuild").configure {
+    dependsOn("prepareAiModel")
+}
+
 android {
     namespace 'com.jd.papernote'
     compileSdk 36
@@ -10,8 +70,8 @@ android {
         applicationId 'com.jd.papernote'
         minSdk 26
         targetSdk 36
-        versionCode 19
-        versionName '2.2.0'
+        versionCode 20
+        versionName '3.0.0'
     }
 
     compileOptions {
@@ -23,7 +83,12 @@ android {
         buildConfig true
     }
 
-    // Device-test release candidate. Production Google Play builds will use Play App Signing.
+    // The local LLM is bundled intentionally. Keeping the GGUF uncompressed avoids
+    // an install-time expansion step and makes model access fast through mmap.
+    aaptOptions {
+        noCompress 'gguf'
+    }
+
     buildTypes {
         release {
             signingConfig signingConfigs.debug
@@ -35,4 +100,6 @@ android {
 
 dependencies {
     implementation 'androidx.core:core:1.17.0'
+    implementation 'dev.ffmpegkit-maintained:llama-android:0.1.1'
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2'
 }
