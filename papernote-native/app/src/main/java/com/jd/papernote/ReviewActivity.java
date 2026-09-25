@@ -25,6 +25,7 @@ public final class ReviewActivity extends Activity {
     private final ArrayList<NotebookStore.ReviewCard> due = new ArrayList<>();
     private int index = 0;
     private boolean showingAnswer = false;
+    private final ArrayList<NotebookStore.ReviewCard> generatedCards = new ArrayList<>();
 
     private TextView progress;
     private TextView front;
@@ -82,6 +83,13 @@ public final class ReviewActivity extends Activity {
         add.setTextSize(18);
         add.setOnClickListener(v -> showAddCard());
         header.addView(add, new LinearLayout.LayoutParams(dp(44), dp(38)));
+
+        Button ai = button("AI", false, true);
+        ai.setTextSize(11);
+        ai.setOnClickListener(v -> showAiGenerate());
+        LinearLayout.LayoutParams aiLp = new LinearLayout.LayoutParams(dp(48), dp(38));
+        aiLp.setMargins(dp(6), 0, 0, 0);
+        header.addView(ai, aiLp);
 
         progress = text("", 11, 0xFFE5EAF3, true);
         progress.setGravity(Gravity.CENTER);
@@ -155,6 +163,106 @@ public final class ReviewActivity extends Activity {
         root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1f));
         setContentView(root);
         render();
+    }
+
+    private void showAiGenerate() {
+        if (notebook == null || notebook.pages.isEmpty()) {
+            toast("Create a notebook first.");
+            return;
+        }
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(8), dp(3), dp(8), 0);
+
+        TextView hint = text(
+                "Paste a chapter excerpt, typed notes, formulas or a study summary. PaperNote AI creates review cards from only the text you provide.",
+                12, 0xFF667085, false);
+        box.addView(hint);
+
+        android.widget.EditText source = new android.widget.EditText(this);
+        source.setHint("Study material…");
+        source.setMinLines(7);
+        source.setGravity(Gravity.TOP | Gravity.START);
+        source.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
+        box.addView(source);
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("AI card builder")
+                .setView(box)
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Generate", null)
+                .create();
+
+        dialog.setOnShowListener(d -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+            String text = source.getText().toString().trim();
+            if (text.length() < 30) {
+                toast("Provide at least a short paragraph of study material.");
+                return;
+            }
+            if (text.length() > 9000) {
+                toast("Keep the source under 9,000 characters.");
+                return;
+            }
+            dialog.dismiss();
+            toast("Generating cards locally…");
+            String prompt = "You are a study-card generator. Create 5 high-value flashcards from the supplied study material. " +
+                    "Do not invent facts. Return exactly this format for each card:\n" +
+                    "CARD\nQ: question\nA: concise answer\nTAG: short topic\nEND\n\n" +
+                    "Use simple student language. Avoid duplicate cards.\n\nMATERIAL:\n" + text;
+            LocalAiBridge.ask(getApplicationContext(), prompt, new LocalAiBridge.Callback() {
+                @Override public void onReady() {
+                    runOnUiThread(() -> toast("AI is working locally…"));
+                }
+                @Override public void onResult(String result, float tokensPerSecond) {
+                    runOnUiThread(() -> saveGeneratedCards(result));
+                }
+                @Override public void onError(String message) {
+                    runOnUiThread(() -> toast("AI card generation failed: " + message));
+                }
+            });
+        }));
+        dialog.show();
+    }
+
+    private void saveGeneratedCards(String result) {
+        if (notebook == null || result == null) {
+            toast("No cards generated.");
+            return;
+        }
+        String[] blocks = result.split("(?m)^CARD\\s*$");
+        int saved = 0;
+        NotebookStore.PageMeta page = notebook.pages.get(0);
+        for (String block : blocks) {
+            String q = extractField(block, "Q:");
+            String a = extractField(block, "A:");
+            String tag = extractField(block, "TAG:");
+            if (q.isEmpty() || a.isEmpty()) continue;
+            try {
+                store.addReviewCard(page.id, q, a, tag);
+                saved++;
+            } catch (Exception ignored) {
+            }
+        }
+        loadDue();
+        index = 0;
+        render();
+        toast(saved == 0 ? "No usable cards were returned." : saved + " AI cards added");
+    }
+
+    private String extractField(String block, String prefix) {
+        int start = block.indexOf(prefix);
+        if (start < 0) return "";
+        start += prefix.length();
+        int end = block.length();
+        int q = block.indexOf("\\nQ:", start);
+        int a = block.indexOf("\\nA:", start);
+        int tag = block.indexOf("\\nTAG:", start);
+        int endMarker = block.indexOf("\\nEND", start);
+        if (q > start && start == block.indexOf(prefix)) end = Math.min(end, q);
+        if (a > start && a < end) end = a;
+        if (tag > start && tag < end) end = tag;
+        if (endMarker > start && endMarker < end) end = endMarker;
+        return block.substring(start, end).replace("\\n", " ").trim();
     }
 
     private void showAddCard() {
