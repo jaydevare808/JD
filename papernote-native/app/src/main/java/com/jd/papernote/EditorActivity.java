@@ -1093,13 +1093,6 @@ public final class EditorActivity extends Activity implements PaperCanvasView.Li
         palmButton.setText(canvasView.isPalmShield() ? "PALM ON" : "PALM OFF");
     }
 
-    private void updateMarginButton() {
-        if (marginButton == null) return;
-        boolean enabled = isMarginEnabled();
-        marginButton.setText(enabled ? "MARGIN" : "MARGIN OFF");
-        marginButton.setTag(enabled);
-    }
-
     private Button styledButton(String label, boolean primary) {
         Button button = toolbarButton(label);
         button.setTextSize(13);
