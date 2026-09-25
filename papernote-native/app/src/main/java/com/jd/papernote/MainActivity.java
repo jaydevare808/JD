@@ -332,13 +332,6 @@ public final class MainActivity extends Activity {
         };
 
         final int[] selected = {0};
-        new AlertDialog.Builder(this)
-                .setTitle("New notebook")
-                .setView(box)
-                .setSingleChoiceItems(templates, 0, (d, which) -> selected[0] = which)
-                .setNegativeButton("Cancel", null)
-                .setPositiveButton("Create", null)
-                .create();
         AlertDialog dialog = new AlertDialog.Builder(this)
                 .setTitle("New notebook")
                 .setView(box)
