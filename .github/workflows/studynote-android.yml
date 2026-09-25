@@ -7,6 +7,9 @@ on:
       - ".github/workflows/studynote-android.yml"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -24,18 +27,23 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Set up Gradle
+      - name: Set up Gradle 9.6
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: "8.9"
+          gradle-version: "9.6"
 
-      - name: Build and lint
+      - name: Build debug APK and lint
         run: gradle :app:assembleDebug :app:lintDebug --no-daemon
+
+      - name: Verify APK
+        run: |
+          test -f app/build/outputs/apk/debug/app-debug.apk
+          ls -lh app/build/outputs/apk/debug/app-debug.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: StudyNote-debug-apk
+          name: StudyNote-1.1.0-debug-apk
           path: education-app/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
@@ -43,7 +51,7 @@ jobs:
       - name: Upload lint report
         uses: actions/upload-artifact@v4
         with:
-          name: StudyNote-lint-report
+          name: StudyNote-1.1.0-lint
           path: education-app/app/build/reports/lint-results-debug.html
           if-no-files-found: warn
           retention-days: 14

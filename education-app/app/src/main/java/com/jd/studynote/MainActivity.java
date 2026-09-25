@@ -2,10 +2,11 @@ package com.jd.studynote;
 
 import android.app.Activity;
 import android.app.AlertDialog;
-import android.content.Context;
+import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
+import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -18,17 +19,29 @@ import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
+import android.widget.PopupMenu;
 import android.widget.ScrollView;
 import android.widget.SeekBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.io.OutputStream;
 import java.util.List;
-import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public final class MainActivity extends Activity implements NoteCanvasView.Listener {
+    private static final int REQUEST_EXPORT_PNG = 701;
+
+    private static final int BG = Color.rgb(245, 247, 251);
+    private static final int NAVY = Color.rgb(27, 24, 56);
+    private static final int ACCENT = Color.rgb(91, 84, 217);
+    private static final int ACCENT_DARK = Color.rgb(72, 65, 171);
+    private static final int TEXT = Color.rgb(28, 33, 48);
+    private static final int MUTED = Color.rgb(107, 114, 128);
+    private static final int BORDER = Color.rgb(224, 228, 236);
+    private static final int PAPER_PANEL = Color.rgb(232, 235, 241);
+
     private NotebookStore store;
     private ExecutorService ioExecutor;
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -42,14 +55,20 @@ public final class MainActivity extends Activity implements NoteCanvasView.Liste
 
     private NoteCanvasView canvas;
     private TextView editorTitle;
+    private TextView editorSubject;
     private TextView editorPage;
     private TextView saveState;
+
+    private Button penButton;
+    private Button highlighterButton;
+    private Button eraserButton;
 
     private Runnable pendingSave;
     private boolean saveInFlight;
     private boolean saveAgain;
     private boolean destroyed;
     private boolean inEditor;
+    private Bitmap pendingExport;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -63,8 +82,8 @@ public final class MainActivity extends Activity implements NoteCanvasView.Liste
         });
 
         Window window = getWindow();
-        window.setStatusBarColor(Color.rgb(24, 35, 57));
-        window.setNavigationBarColor(Color.rgb(24, 35, 57));
+        window.setStatusBarColor(NAVY);
+        window.setNavigationBarColor(NAVY);
 
         if (store.list().isEmpty()) {
             try {
@@ -102,6 +121,10 @@ public final class MainActivity extends Activity implements NoteCanvasView.Liste
             handler.removeCallbacks(pendingSave);
             pendingSave = null;
         }
+        if (pendingExport != null && !pendingExport.isRecycled()) {
+            pendingExport.recycle();
+            pendingExport = null;
+        }
         if (ioExecutor != null) {
             ioExecutor.shutdown();
         }
@@ -124,40 +147,53 @@ public final class MainActivity extends Activity implements NoteCanvasView.Liste
 
         root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(Color.rgb(245, 247, 251));
+        root.setBackgroundColor(BG);
 
         LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.VERTICAL);
-        header.setPadding(dp(20), dp(20), dp(20), dp(18));
-        header.setBackgroundColor(Color.rgb(24, 35, 57));
+        header.setPadding(dp(20), dp(22), dp(20), dp(18));
+        header.setBackground(gradient(NAVY, ACCENT_DARK));
 
-        TextView title = text("StudyNote", 30, Color.WHITE, true);
-        header.addView(title);
-        TextView subtitle = text("A simple handwriting notebook for school.", 12, 0xFFC9D2E1, false);
-        subtitle.setPadding(0, dp(3), 0, 0);
-        header.addView(subtitle);
+        LinearLayout brandRow = new LinearLayout(this);
+        brandRow.setGravity(Gravity.CENTER_VERTICAL);
 
-        homeStats = text("0 notebooks  •  0 pages", 11, 0xFFE6EBF4, true);
-        homeStats.setPadding(0, dp(12), 0, 0);
+        TextView logo = text("✎", 25, Color.WHITE, true);
+        logo.setGravity(Gravity.CENTER);
+        logo.setBackground(rounded(0x33FFFFFF, 15));
+        brandRow.addView(logo, new LinearLayout.LayoutParams(dp(48), dp(48)));
+
+        LinearLayout brandText = new LinearLayout(this);
+        brandText.setOrientation(LinearLayout.VERTICAL);
+        TextView title = text("StudyNote", 27, Color.WHITE, true);
+        brandText.addView(title);
+        TextView subtitle = text("A calm space for handwritten study.", 12, 0xFFDAD8F8, false);
+        subtitle.setPadding(0, dp(2), 0, 0);
+        brandText.addView(subtitle);
+
+        LinearLayout.LayoutParams brandTextLp = new LinearLayout.LayoutParams(0, -2, 1f);
+        brandTextLp.setMargins(dp(12), 0, dp(12), 0);
+        brandRow.addView(brandText, brandTextLp);
+
+        Button newNotebook = button("+ New", Color.WHITE, NAVY);
+        newNotebook.setBackground(rounded(Color.WHITE, 13));
+        newNotebook.setOnClickListener(v -> createNotebook(null, null, NoteCanvasView.PAPER_RULED));
+        brandRow.addView(newNotebook, new LinearLayout.LayoutParams(dp(88), dp(44)));
+
+        header.addView(brandRow);
+
+        homeStats = text("0 notebooks  •  0 pages", 11, 0xFFE6E4FA, true);
+        homeStats.setPadding(0, dp(15), 0, 0);
         header.addView(homeStats);
         root.addView(header);
 
-        LinearLayout actions = new LinearLayout(this);
-        actions.setPadding(dp(16), dp(16), dp(16), dp(10));
-
-        Button add = primaryButton("+ New notebook");
-        add.setOnClickListener(v -> createNotebook(null, null, NoteCanvasView.PAPER_RULED));
-        actions.addView(add, new LinearLayout.LayoutParams(0, dp(48), 1f));
-        root.addView(actions);
-
-        TextView section = text("MY NOTEBOOKS", 11, 0xFF7A8495, true);
-        section.setPadding(dp(18), dp(2), dp(18), dp(8));
+        TextView section = text("YOUR NOTEBOOKS", 11, 0xFF7A8191, true);
+        section.setPadding(dp(20), dp(18), dp(20), dp(10));
         root.addView(section);
 
         ScrollView scroll = new ScrollView(this);
         homeList = new LinearLayout(this);
         homeList.setOrientation(LinearLayout.VERTICAL);
-        homeList.setPadding(dp(16), 0, dp(16), dp(20));
+        homeList.setPadding(dp(16), 0, dp(16), dp(24));
         scroll.addView(homeList);
         root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1f));
 
@@ -178,13 +214,13 @@ public final class MainActivity extends Activity implements NoteCanvasView.Liste
 
         if (notebooks.isEmpty()) {
             LinearLayout empty = card();
-            empty.addView(text("No notebooks yet. Create one and start writing.", 14, 0xFF667085, false));
+            empty.addView(text("Create a notebook to start writing.", 14, MUTED, false));
             homeList.addView(empty);
         }
 
         homeStats.setText(
                 notebooks.size() + " notebook" + (notebooks.size() == 1 ? "" : "s")
-                        + "  •  " + pages + " saved page" + (pages == 1 ? "" : "s")
+                        + "  •  " + pages + " page" + (pages == 1 ? "" : "s")
         );
     }
 
@@ -194,24 +230,36 @@ public final class MainActivity extends Activity implements NoteCanvasView.Liste
         LinearLayout row = new LinearLayout(this);
         row.setGravity(Gravity.CENTER_VERTICAL);
 
+        TextView badge = text(String.valueOf(n.title.charAt(0)).toUpperCase(), 18, Color.WHITE, true);
+        badge.setGravity(Gravity.CENTER);
+        badge.setBackground(rounded(ACCENT, 14));
+        row.addView(badge, new LinearLayout.LayoutParams(dp(48), dp(48)));
+
         LinearLayout labels = new LinearLayout(this);
         labels.setOrientation(LinearLayout.VERTICAL);
-        labels.addView(text(n.title, 18, 0xFF182339, true));
-        labels.addView(text(
-                n.subject + "  •  " + n.pages.size() + " page" + (n.pages.size() == 1 ? "" : "s"),
-                12, 0xFF667085, false
-        ));
-        row.addView(labels, new LinearLayout.LayoutParams(0, -2, 1f));
 
-        Button open = button("OPEN");
-        open.setOnClickListener(v -> enterEditor(n.id, 0));
-        row.addView(open, new LinearLayout.LayoutParams(dp(82), dp(42)));
+        TextView name = text(n.title, 17, TEXT, true);
+        labels.addView(name);
+        TextView meta = text(
+                n.subject + "  •  " + n.pages.size() + " page" + (n.pages.size() == 1 ? "" : "s"),
+                12, MUTED, false
+        );
+        meta.setPadding(0, dp(3), 0, 0);
+        labels.addView(meta);
+
+        LinearLayout.LayoutParams labelLp = new LinearLayout.LayoutParams(0, -2, 1f);
+        labelLp.setMargins(dp(12), 0, dp(8), 0);
+        row.addView(labels, labelLp);
+
+        TextView arrow = text("›", 25, ACCENT, false);
+        arrow.setGravity(Gravity.CENTER);
+        row.addView(arrow, new LinearLayout.LayoutParams(dp(38), dp(46)));
 
         card.addView(row);
         card.setOnClickListener(v -> enterEditor(n.id, 0));
 
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-        lp.setMargins(0, 0, 0, dp(9));
+        lp.setMargins(0, 0, 0, dp(10));
         homeList.addView(card, lp);
     }
 
@@ -276,40 +324,48 @@ public final class MainActivity extends Activity implements NoteCanvasView.Liste
     private void buildEditor() {
         root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(0xFFE2E6ED);
+        root.setBackgroundColor(PAPER_PANEL);
 
         LinearLayout header = new LinearLayout(this);
         header.setGravity(Gravity.CENTER_VERTICAL);
-        header.setPadding(dp(7), dp(7), dp(7), dp(7));
-        header.setBackgroundColor(0xFF182339);
-        header.setElevation(dp(3));
+        header.setPadding(dp(8), dp(8), dp(8), dp(8));
+        header.setBackground(gradient(NAVY, ACCENT_DARK));
 
-        Button back = toolbarButton("‹");
-        back.setTextSize(24);
-        back.setTextColor(Color.WHITE);
-        back.setBackground(rounded(0xFF26334D, 12));
+        Button back = toolbarButton("‹", Color.WHITE);
+        back.setTextSize(25);
+        back.setBackground(rounded(0x22FFFFFF, 13));
         back.setOnClickListener(v -> onBackPressed());
-        header.addView(back, new LinearLayout.LayoutParams(dp(46), dp(44)));
+        header.addView(back, new LinearLayout.LayoutParams(dp(44), dp(44)));
 
+        LinearLayout titles = new LinearLayout(this);
+        titles.setOrientation(LinearLayout.VERTICAL);
+        titles.setGravity(Gravity.CENTER_VERTICAL);
         editorTitle = text(notebook.title, 16, Color.WHITE, true);
-        LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(0, -2, 1f);
-        titleLp.setMargins(dp(9), 0, dp(6), 0);
-        header.addView(editorTitle, titleLp);
+        titles.addView(editorTitle);
+        editorSubject = text(notebook.subject, 10, 0xFFD9D7F0, false);
+        editorSubject.setPadding(0, dp(2), 0, 0);
+        titles.addView(editorSubject);
 
-        saveState = text("Saved", 10, 0xFFD8DFEB, true);
+        LinearLayout.LayoutParams titlesLp = new LinearLayout.LayoutParams(0, -2, 1f);
+        titlesLp.setMargins(dp(10), 0, dp(8), 0);
+        header.addView(titles, titlesLp);
+
+        saveState = text("Saved", 10, 0xFFF0EEFF, true);
         saveState.setGravity(Gravity.CENTER);
-        saveState.setBackground(rounded(0xFF26334D, 13));
+        saveState.setBackground(rounded(0x22FFFFFF, 12));
         header.addView(saveState, new LinearLayout.LayoutParams(dp(68), dp(34)));
 
-        Button rename = toolbarButton("NAME");
-        rename.setOnClickListener(v -> renameCurrent());
-        header.addView(rename, new LinearLayout.LayoutParams(dp(58), dp(44)));
+        Button more = toolbarButton("⋮", Color.WHITE);
+        more.setTextSize(22);
+        more.setBackground(rounded(0x22FFFFFF, 13));
+        more.setOnClickListener(this::showMoreMenu);
+        header.addView(more, new LinearLayout.LayoutParams(dp(44), dp(44)));
 
         root.addView(header);
         root.addView(buildToolbar());
 
         FrameLayout canvasFrame = new FrameLayout(this);
-        canvasFrame.setPadding(dp(7), dp(7), dp(7), dp(7));
+        canvasFrame.setPadding(dp(8), dp(8), dp(8), dp(8));
 
         canvas = new NoteCanvasView(this);
         canvas.setListener(this);
@@ -323,97 +379,88 @@ public final class MainActivity extends Activity implements NoteCanvasView.Liste
     }
 
     private View buildToolbar() {
-        HorizontalScrollView scroll = new HorizontalScrollView(this);
-        scroll.setHorizontalScrollBarEnabled(false);
-        scroll.setBackgroundColor(0xFFF9FAFC);
+        LinearLayout outer = new LinearLayout(this);
+        outer.setGravity(Gravity.CENTER_VERTICAL);
+        outer.setPadding(dp(8), dp(7), dp(8), dp(7));
+        outer.setBackgroundColor(Color.WHITE);
 
-        LinearLayout row = new LinearLayout(this);
-        row.setPadding(dp(7), dp(5), dp(7), dp(5));
+        penButton = toolButton("Pen");
+        highlighterButton = toolButton("Highlight");
+        eraserButton = toolButton("Eraser");
 
-        addTool(row, "PEN", NoteCanvasView.TOOL_PEN);
-        addTool(row, "HIGHLIGHT", NoteCanvasView.TOOL_HIGHLIGHTER);
-        addTool(row, "ERASER", NoteCanvasView.TOOL_ERASER);
-
-        Button undo = toolbarButton("UNDO");
-        undo.setOnClickListener(v -> canvas.undo());
-        row.addView(undo);
-
-        Button redo = toolbarButton("REDO");
-        redo.setOnClickListener(v -> canvas.redo());
-        row.addView(redo);
-
-        Button clear = toolbarButton("CLEAR");
-        clear.setOnClickListener(v -> confirmClear());
-        row.addView(clear);
-
-        Button color = toolbarButton("INK");
-        color.setOnClickListener(v -> showColorDialog());
-        row.addView(color);
-
-        TextView sizeLabel = text(" Size ", 11, 0xFF667085, true);
-        sizeLabel.setGravity(Gravity.CENTER_VERTICAL);
-        row.addView(sizeLabel);
-
-        SeekBar size = new SeekBar(this);
-        size.setMax(28);
-        size.setProgress(8);
-        size.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                canvas.setPenSize(2.0f + progress * 0.55f);
-            }
-            @Override public void onStartTrackingTouch(SeekBar seekBar) {}
-            @Override public void onStopTrackingTouch(SeekBar seekBar) {}
+        penButton.setOnClickListener(v -> {
+            canvas.setTool(NoteCanvasView.TOOL_PEN);
+            updateToolButtons();
         });
-        row.addView(size, new LinearLayout.LayoutParams(dp(115), dp(44)));
+        highlighterButton.setOnClickListener(v -> {
+            canvas.setTool(NoteCanvasView.TOOL_HIGHLIGHTER);
+            updateToolButtons();
+        });
+        eraserButton.setOnClickListener(v -> {
+            canvas.setTool(NoteCanvasView.TOOL_ERASER);
+            updateToolButtons();
+        });
 
-        Button paper = toolbarButton("PAPER");
-        paper.setOnClickListener(v -> showPaperDialog());
-        row.addView(paper);
+        outer.addView(penButton);
+        outer.addView(highlighterButton, marginLp(dp(6), dp(0), dp(0), dp(0)));
+        outer.addView(eraserButton, marginLp(dp(6), dp(0), dp(0), dp(0)));
 
-        Button pageName = toolbarButton("PAGE NAME");
-        pageName.setOnClickListener(v -> renamePage());
-        row.addView(pageName);
+        View divider = new View(this);
+        divider.setBackgroundColor(BORDER);
+        outer.addView(divider, new LinearLayout.LayoutParams(dp(1), dp(30)) {{
+            setMargins(dp(8), 0, dp(8), 0);
+        }});
 
-        scroll.addView(row);
-        return scroll;
-    }
+        Button undo = toolbarButton("↶", TEXT);
+        undo.setTextSize(19);
+        undo.setOnClickListener(v -> canvas.undo());
+        outer.addView(undo);
 
-    private void addTool(LinearLayout parent, String label, int tool) {
-        Button b = toolbarButton(label);
-        b.setOnClickListener(v -> canvas.setTool(tool));
-        parent.addView(b);
+        Button redo = toolbarButton("↷", TEXT);
+        redo.setTextSize(19);
+        redo.setOnClickListener(v -> canvas.redo());
+        outer.addView(redo);
+
+        TextView hint = text("Write", 11, MUTED, false);
+        hint.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams hintLp = new LinearLayout.LayoutParams(0, dp(32), 1f);
+        hintLp.setMargins(dp(8), 0, 0, 0);
+        outer.addView(hint, hintLp);
+
+        LinearLayout.LayoutParams wrapLp = new LinearLayout.LayoutParams(-1, -2);
+        return outer;
     }
 
     private View buildBottomBar() {
         LinearLayout row = new LinearLayout(this);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(dp(7), dp(5), dp(7), dp(5));
+        row.setPadding(dp(7), dp(6), dp(7), dp(6));
         row.setBackgroundColor(Color.WHITE);
-        row.setElevation(dp(4));
 
-        Button previous = toolbarButton("‹");
-        previous.setTextSize(22);
+        Button previous = toolbarButton("‹", TEXT);
+        previous.setTextSize(23);
         previous.setOnClickListener(v -> movePage(-1));
-        row.addView(previous, new LinearLayout.LayoutParams(dp(46), dp(44)));
+        row.addView(previous, new LinearLayout.LayoutParams(dp(44), dp(44)));
 
         LinearLayout middle = new LinearLayout(this);
         middle.setOrientation(LinearLayout.VERTICAL);
         middle.setGravity(Gravity.CENTER);
 
-        editorPage = text("", 12, 0xFF182339, true);
+        editorPage = text("", 12, TEXT, true);
         editorPage.setGravity(Gravity.CENTER);
         middle.addView(editorPage);
 
-        TextView autosave = text("AUTO-SAVE", 9, 0xFF7A8495, true);
+        TextView autosave = text("AUTO-SAVE ON", 9, MUTED, true);
+        autosave.setGravity(Gravity.CENTER);
         middle.addView(autosave);
         row.addView(middle, new LinearLayout.LayoutParams(0, dp(44), 1f));
 
-        Button next = toolbarButton("›");
-        next.setTextSize(22);
+        Button next = toolbarButton("›", TEXT);
+        next.setTextSize(23);
         next.setOnClickListener(v -> movePage(1));
-        row.addView(next, new LinearLayout.LayoutParams(dp(46), dp(44)));
+        row.addView(next, new LinearLayout.LayoutParams(dp(44), dp(44)));
 
-        Button add = toolbarButton("+ PAGE");
+        Button add = toolbarButton("+ Page", ACCENT);
         add.setOnClickListener(v -> addPage());
         row.addView(add);
 
@@ -431,13 +478,13 @@ public final class MainActivity extends Activity implements NoteCanvasView.Liste
         canvas.loadBitmap(bitmap);
         canvas.setPaperType(page.paperType);
         canvas.setTool(NoteCanvasView.TOOL_PEN);
-        canvas.setPenSize(6.4f);
+        canvas.setPenSize(6.0f);
 
-        editorPage.setText(
-                "Page " + (pageIndex + 1) + " / " + notebook.pages.size()
-        );
+        editorPage.setText("Page " + (pageIndex + 1) + " / " + notebook.pages.size());
         saveState.setText("Saved");
         editorTitle.setText(notebook.title);
+        editorSubject.setText(notebook.subject);
+        updateToolButtons();
     }
 
     private void movePage(int delta) {
@@ -454,20 +501,50 @@ public final class MainActivity extends Activity implements NoteCanvasView.Liste
         checkpointSave();
 
         String paper = notebook.pages.get(pageIndex).paperType;
-        NotebookStore.PageMeta page = store.addPage(
+        store.addPage(
                 notebook,
                 "Page " + (notebook.pages.size() + 1),
                 paper
         );
 
         pageIndex = notebook.pages.size() - 1;
-        try {
-            store.saveNotebook(notebook);
-        } catch (Exception e) {
-            toast("Could not save notebook.");
-            return;
-        }
         loadPage();
+        checkpointSave();
+    }
+
+    private void showMoreMenu(View anchor) {
+        PopupMenu menu = new PopupMenu(this, anchor);
+        menu.getMenu().add("Export page as PNG");
+        menu.getMenu().add("Paper template");
+        menu.getMenu().add("Rename page");
+        menu.getMenu().add("Rename notebook");
+        menu.getMenu().add("Clear page");
+
+        menu.setOnMenuItemClickListener(item -> {
+            String title = item.getTitle().toString();
+            if ("Export page as PNG".equals(title)) {
+                exportCurrentPage();
+                return true;
+            }
+            if ("Paper template".equals(title)) {
+                showPaperDialog();
+                return true;
+            }
+            if ("Rename page".equals(title)) {
+                renamePage();
+                return true;
+            }
+            if ("Rename notebook".equals(title)) {
+                renameCurrent();
+                return true;
+            }
+            if ("Clear page".equals(title)) {
+                confirmClear();
+                return true;
+            }
+            return false;
+        });
+        menu.show();
     }
 
     private void renameCurrent() {
@@ -480,11 +557,11 @@ public final class MainActivity extends Activity implements NoteCanvasView.Liste
                 .setView(input)
                 .setNegativeButton("Cancel", null)
                 .setPositiveButton("Save", (d, w) -> {
-                    try {
-                        store.renameNotebook(notebook, input.getText().toString());
-                        editorTitle.setText(notebook.title);
-                    } catch (Exception e) {
-                        toast("Could not rename notebook.");
+                    String value = input.getText().toString().trim();
+                    if (!value.isEmpty()) {
+                        notebook.title = value;
+                        editorTitle.setText(value);
+                        checkpointSave();
                     }
                 })
                 .show();
@@ -500,11 +577,10 @@ public final class MainActivity extends Activity implements NoteCanvasView.Liste
                 .setView(input)
                 .setNegativeButton("Cancel", null)
                 .setPositiveButton("Save", (d, w) -> {
-                    try {
-                        store.renamePage(notebook, pageIndex, input.getText().toString());
-                        editorPage.setText("Page " + (pageIndex + 1) + " / " + notebook.pages.size());
-                    } catch (Exception e) {
-                        toast("Could not rename page.");
+                    String value = input.getText().toString().trim();
+                    if (!value.isEmpty()) {
+                        notebook.pages.get(pageIndex).title = value;
+                        checkpointSave();
                     }
                 })
                 .show();
@@ -529,14 +605,12 @@ public final class MainActivity extends Activity implements NoteCanvasView.Liste
         final int initialChecked = checked;
 
         new AlertDialog.Builder(this)
-                .setTitle("Paper")
+                .setTitle("Paper template")
                 .setSingleChoiceItems(labels, initialChecked, null)
                 .setNegativeButton("Cancel", null)
                 .setPositiveButton("Apply", (d, w) -> {
                     android.widget.ListView list = ((AlertDialog) d).getListView();
-                    int selected = list == null
-                            ? initialChecked
-                            : list.getCheckedItemPosition();
+                    int selected = list == null ? initialChecked : list.getCheckedItemPosition();
                     if (selected < 0 || selected >= values.length) selected = initialChecked;
 
                     notebook.pages.get(pageIndex).paperType = values[selected];
@@ -548,28 +622,84 @@ public final class MainActivity extends Activity implements NoteCanvasView.Liste
 
     private void showColorDialog() {
         final int[] colors = {
-                0xFF182339,
-                0xFF1E5AA8,
-                0xFF7D2848,
-                0xFF0F6950,
-                0xFF6A461F,
-                0xFF5C3196
+                0xFF1B1838,
+                0xFF1D4ED8,
+                0xFF0F766E,
+                0xFF9F1239
         };
-        String[] labels = {"Navy", "Blue", "Burgundy", "Green", "Brown", "Purple"};
+        String[] labels = {"Dark", "Blue", "Teal", "Red"};
 
         new AlertDialog.Builder(this)
-                .setTitle("Ink")
+                .setTitle("Pen colour")
                 .setItems(labels, (d, which) -> canvas.setInkColor(colors[which]))
                 .show();
     }
 
     private void confirmClear() {
         new AlertDialog.Builder(this)
-                .setTitle("Clear page?")
+                .setTitle("Clear this page?")
                 .setMessage("This removes all handwriting from the current page.")
                 .setNegativeButton("Cancel", null)
                 .setPositiveButton("Clear", (d, w) -> canvas.clearPage())
                 .show();
+    }
+
+    private void exportCurrentPage() {
+        if (canvas == null) return;
+        Bitmap exported = canvas.exportBitmap();
+        if (exported == null) {
+            toast("Could not prepare the page.");
+            return;
+        }
+
+        if (pendingExport != null && !pendingExport.isRecycled()) {
+            pendingExport.recycle();
+        }
+        pendingExport = exported;
+
+        String pageTitle = notebook.pages.get(pageIndex).title
+                .replaceAll("[^a-zA-Z0-9._-]+", "_");
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("image/png");
+        intent.putExtra(Intent.EXTRA_TITLE, pageTitle + ".png");
+
+        try {
+            startActivityForResult(intent, REQUEST_EXPORT_PNG);
+        } catch (Exception e) {
+            pendingExport.recycle();
+            pendingExport = null;
+            toast("No file picker is available.");
+        }
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+
+        if (requestCode != REQUEST_EXPORT_PNG) return;
+
+        Bitmap bitmap = pendingExport;
+        pendingExport = null;
+
+        if (bitmap == null || bitmap.isRecycled()) return;
+
+        if (resultCode != RESULT_OK || data == null || data.getData() == null) {
+            bitmap.recycle();
+            return;
+        }
+
+        Uri uri = data.getData();
+        try (OutputStream out = getContentResolver().openOutputStream(uri)) {
+            if (out == null || !bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)) {
+                throw new Exception("PNG export failed");
+            }
+            toast("Page exported.");
+        } catch (Exception e) {
+            toast("Could not export the page.");
+        } finally {
+            if (!bitmap.isRecycled()) bitmap.recycle();
+        }
     }
 
     @Override
@@ -582,7 +712,7 @@ public final class MainActivity extends Activity implements NoteCanvasView.Liste
         if (pendingSave != null) handler.removeCallbacks(pendingSave);
         pendingSave = () -> {
             pendingSave = null;
-            enqueueSave(false);
+            enqueueSave();
         };
         handler.postDelayed(pendingSave, 850L);
     }
@@ -592,11 +722,12 @@ public final class MainActivity extends Activity implements NoteCanvasView.Liste
             handler.removeCallbacks(pendingSave);
             pendingSave = null;
         }
-        enqueueSave(true);
+        enqueueSave();
     }
 
-    private void enqueueSave(boolean immediate) {
+    private void enqueueSave() {
         if (destroyed || !inEditor || notebook == null || canvas == null) return;
+
         if (saveInFlight) {
             saveAgain = true;
             return;
@@ -614,8 +745,8 @@ public final class MainActivity extends Activity implements NoteCanvasView.Liste
             snapshot = source.copy(Bitmap.Config.ARGB_8888, false);
         } catch (OutOfMemoryError e) {
             if (saveState != null) saveState.setText("Memory busy");
-            if (!immediate) {
-                handler.postDelayed(this::checkpointSave, 1500L);
+            if (!saveAgain) {
+                handler.postDelayed(this::checkpointSave, 1200L);
             }
             return;
         }
@@ -640,7 +771,7 @@ public final class MainActivity extends Activity implements NoteCanvasView.Liste
                     }
                     if (saveAgain && !destroyed) {
                         saveAgain = false;
-                        handler.postDelayed(() -> enqueueSave(true), 250L);
+                        handler.postDelayed(this::enqueueSave, 250L);
                     }
                 });
             }
@@ -655,43 +786,72 @@ public final class MainActivity extends Activity implements NoteCanvasView.Liste
         showHome();
     }
 
+    private void updateToolButtons() {
+        if (penButton == null || canvas == null) return;
+        int tool = canvas.getTool();
+        styleToolButton(penButton, tool == NoteCanvasView.TOOL_PEN);
+        styleToolButton(highlighterButton, tool == NoteCanvasView.TOOL_HIGHLIGHTER);
+        styleToolButton(eraserButton, tool == NoteCanvasView.TOOL_ERASER);
+    }
+
+    private void styleToolButton(Button button, boolean selected) {
+        if (selected) {
+            button.setTextColor(Color.WHITE);
+            button.setBackground(rounded(ACCENT, 14));
+        } else {
+            button.setTextColor(TEXT);
+            button.setBackground(rounded(0xFFF4F5F8, 14));
+        }
+    }
+
     private int clampPage(int index) {
         if (notebook == null || notebook.pages.isEmpty()) return 0;
         return Math.max(0, Math.min(index, notebook.pages.size() - 1));
     }
 
-    private Button primaryButton(String value) {
-        Button b = button(value);
-        b.setTextColor(Color.WHITE);
-        b.setBackground(rounded(0xFF3157D5, 14));
-        return b;
-    }
-
-    private Button toolbarButton(String value) {
-        Button b = button(value);
+    private Button toolButton(String value) {
+        Button b = button(value, TEXT, 0xFFF4F5F8);
         b.setTextSize(11);
-        b.setPadding(dp(9), 0, dp(9), 0);
+        b.setMinHeight(0);
+        b.setMinWidth(0);
+        b.setPadding(dp(12), 0, dp(12), 0);
         return b;
     }
 
-    private Button button(String value) {
+    private Button toolbarButton(String value, int textColor) {
+        Button b = button(value, textColor, Color.WHITE);
+        b.setTextSize(11);
+        b.setMinHeight(0);
+        b.setMinWidth(0);
+        b.setPadding(dp(10), 0, dp(10), 0);
+        return b;
+    }
+
+    private Button button(String value, int textColor, int background) {
         Button b = new Button(this);
         b.setText(value);
         b.setAllCaps(false);
         b.setMinHeight(0);
         b.setMinWidth(0);
-        b.setPadding(dp(9), 0, dp(9), 0);
         b.setTextSize(12);
-        b.setTextColor(0xFF182339);
-        b.setBackground(rounded(Color.WHITE, 12));
+        b.setTextColor(textColor);
+        b.setGravity(Gravity.CENTER);
+        b.setPadding(dp(10), 0, dp(10), 0);
+        b.setBackground(rounded(background, 12));
         return b;
+    }
+
+    private LinearLayout.LayoutParams marginLp(int left, int top, int right, int bottom) {
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, dp(44));
+        lp.setMargins(left, top, right, bottom);
+        return lp;
     }
 
     private LinearLayout card() {
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
-        box.setPadding(dp(14), dp(13), dp(14), dp(13));
-        box.setBackground(rounded(Color.WHITE, 16));
+        box.setPadding(dp(15), dp(14), dp(15), dp(14));
+        box.setBackground(rounded(Color.WHITE, 18));
         box.setElevation(dp(1));
         return box;
     }
@@ -712,9 +872,18 @@ public final class MainActivity extends Activity implements NoteCanvasView.Liste
         GradientDrawable d = new GradientDrawable();
         d.setColor(color);
         d.setCornerRadius(dp(radius));
-        if (color == Color.WHITE) {
-            d.setStroke(dp(1), 0xFFE0E5EC);
+        if (color == Color.WHITE || color == 0xFFF4F5F8) {
+            d.setStroke(dp(1), BORDER);
         }
+        return d;
+    }
+
+    private GradientDrawable gradient(int start, int end) {
+        GradientDrawable d = new GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                new int[]{start, end}
+        );
+        d.setCornerRadius(0f);
         return d;
     }
 
