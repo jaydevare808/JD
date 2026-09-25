@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [main, papernote-native]
+    branches: [main, papernote-native, release/papernote-clean-stable-2.0]
   workflow_dispatch:
 
 permissions:
@@ -38,12 +38,6 @@ jobs:
         with:
           gradle-version: '9.6.0'
 
-      - name: Cache PaperNote AI model
-        uses: actions/cache@v4
-        with:
-          path: papernote-native/app/src/main/assets/PaperNote-AI.gguf
-          key: papernote-ai-smollm2-360m-q4km-v1
-
       - name: Build signed release and lint
         working-directory: papernote-native
         run: |
@@ -55,7 +49,6 @@ jobs:
           test -f app/build/outputs/apk/release/app-release.apk
           APK_SIZE=$(stat -c%s app/build/outputs/apk/release/app-release.apk)
           echo "PaperNote APK size: ${APK_SIZE} bytes ($((APK_SIZE / 1024 / 1024)) MiB)"
-          test "$APK_SIZE" -gt 62914560
           mkdir -p artifacts
           cp app/build/outputs/apk/release/app-release.apk artifacts/PaperNote-stable.apk
           cp app/build/outputs/apk/release/app-release.apk artifacts/PaperNote-release.apk

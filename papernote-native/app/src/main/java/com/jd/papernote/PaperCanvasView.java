@@ -6,7 +6,6 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Path;
-import android.graphics.PointF;
 import android.graphics.PorterDuff;
 import android.graphics.PorterDuffXfermode;
 import android.graphics.RectF;
@@ -16,8 +15,6 @@ import android.view.ScaleGestureDetector;
 import android.view.View;
 
 import java.util.ArrayDeque;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Deque;
 
 public final class PaperCanvasView extends View {
@@ -29,10 +26,6 @@ public final class PaperCanvasView extends View {
     public static final String PAPER_GRAPH = "graph";
     public static final String PAPER_DOT = "dot";
     public static final String PAPER_MATH = "math";
-    public static final String PAPER_EXAM_2 = "exam_2";
-    public static final String PAPER_EXAM_3 = "exam_3";
-    public static final String PAPER_EXAM_4 = "exam_4";
-    public static final String PAPER_EXPERIMENT = "experiment";
 
     public static final int TOOL_PEN = 0;
     public static final int TOOL_HIGHLIGHTER = 1;
@@ -47,28 +40,6 @@ public final class PaperCanvasView extends View {
         void onRequestText(float pageX, float pageY);
     }
 
-    public interface InteractionListener {
-        void onStrokeStarted(float pageX, float pageY, int tool);
-        void onPinPlaced(float pageX, float pageY);
-        void onPinTapped(float pageX, float pageY);
-    }
-
-    public static final class StudyPin {
-        public final float x;
-        public final float y;
-        public final String type;
-        public final String label;
-        public final boolean resolved;
-
-        public StudyPin(float x, float y, String type, String label, boolean resolved) {
-            this.x = x;
-            this.y = y;
-            this.type = type;
-            this.label = label;
-            this.resolved = resolved;
-        }
-    }
-
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.DITHER_FLAG);
     private final Paint bitmapPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
     private final RectF pageRect = new RectF();
@@ -77,21 +48,7 @@ public final class PaperCanvasView extends View {
 
     private Bitmap inkBitmap;
     private Bitmap baseBitmap;
-    private Bitmap paperBitmap;
     private Listener listener;
-    private InteractionListener interactionListener;
-    private SoundEngine soundEngine;
-    private List<StudyPin> studyPins = new ArrayList<>();
-    private Bitmap ghostBitmap;
-    private float ghostAlpha = 0f;
-    private boolean recallMode = false;
-    private boolean marksOnlyMode = false;
-    private boolean placingPin = false;
-    private boolean replaying = false;
-    private long replayDelayMs = 55L;
-    private Bitmap replayFinalBitmap;
-    private int replayIndex = 0;
-    private Runnable replayRunnable;
 
     private int tool = TOOL_PEN;
     private int inkColor = Color.rgb(24, 35, 51);
@@ -112,7 +69,9 @@ public final class PaperCanvasView extends View {
     private float shapeEndY;
 
     private final Path liveStroke = new Path();
-    private final ArrayList<PointF> livePoints = new ArrayList<>(256);
+    private float[] livePointX = new float[1024];
+    private float[] livePointY = new float[1024];
+    private int livePointCount = 0;
     private float liveLastX;
     private float liveLastY;
     private float liveCurveEndX;
@@ -134,8 +93,6 @@ public final class PaperCanvasView extends View {
 
     public PaperCanvasView(Context context) {
         super(context);
-
-        rebuildPaperCache();
 
         // Keep the View hardware accelerated. The old implementation forced a software
         // layer, which made live handwriting feel slow on tablets. Commands are rasterized
@@ -166,141 +123,6 @@ public final class PaperCanvasView extends View {
 
     public void setListener(Listener listener) {
         this.listener = listener;
-    }
-
-    public void setInteractionListener(InteractionListener listener) {
-        this.interactionListener = listener;
-    }
-
-    public void setStudyPins(List<StudyPin> pins) {
-        this.studyPins = pins == null ? new ArrayList<>() : new ArrayList<>(pins);
-        invalidate();
-    }
-
-    public void setGhostBitmap(Bitmap bitmap, float alpha) {
-        if (ghostBitmap != null && ghostBitmap != bitmap && !ghostBitmap.isRecycled()) {
-            ghostBitmap.recycle();
-        }
-        ghostBitmap = bitmap;
-        ghostAlpha = Math.max(0f, Math.min(1f, alpha));
-        invalidate();
-    }
-
-    public void clearGhostBitmap() {
-        if (ghostBitmap != null && !ghostBitmap.isRecycled()) ghostBitmap.recycle();
-        ghostBitmap = null;
-        ghostAlpha = 0f;
-        invalidate();
-    }
-
-    public boolean hasGhostBitmap() {
-        return ghostBitmap != null && !ghostBitmap.isRecycled();
-    }
-
-    public void setRecallMode(boolean enabled) {
-        recallMode = enabled;
-        cancelLiveStroke();
-        invalidate();
-    }
-
-    public boolean isRecallMode() {
-        return recallMode;
-    }
-
-    public void setMarksOnlyMode(boolean enabled) {
-        marksOnlyMode = enabled;
-        cancelLiveStroke();
-        writeMode = false;
-        invalidate();
-    }
-
-    public boolean isMarksOnlyMode() {
-        return marksOnlyMode;
-    }
-
-    public void setReplaySpeed(float speed) {
-        float safe = Math.max(0.25f, Math.min(4f, speed));
-        replayDelayMs = Math.round(55f / safe);
-    }
-
-    public float getReplaySpeed() {
-        return 55f / Math.max(1L, replayDelayMs);
-    }
-
-    public void centerOnPagePoint(float pageX, float pageY) {
-        writeMode = false;
-        zoom = 1.65f;
-        float scale = currentScale();
-        float pageW = PAGE_WIDTH * scale;
-        float pageH = PAGE_HEIGHT * scale;
-        panX = pageW * 0.5f - pageX * scale;
-        panY = pageH * 0.5f - pageY * scale;
-        invalidate();
-    }
-
-    public boolean isReplaying() {
-        return replaying;
-    }
-
-    public boolean replaySession() {
-        if (replaying || undo.isEmpty() || inkBitmap == null || baseBitmap == null) return false;
-
-        stopReplaySession();
-        replayFinalBitmap = inkBitmap.copy(Bitmap.Config.ARGB_8888, false);
-        Bitmap firstFrame = baseBitmap.copy(Bitmap.Config.ARGB_8888, true);
-        Bitmap old = inkBitmap;
-        inkBitmap = firstFrame;
-        if (old != null && !old.isRecycled() && old != baseBitmap) old.recycle();
-
-        replayIndex = 0;
-        replaying = true;
-        replayRunnable = new Runnable() {
-            @Override public void run() {
-                if (!replaying) return;
-                if (replayIndex >= undo.size()) {
-                    replaying = false;
-                    if (replayFinalBitmap != null && !replayFinalBitmap.isRecycled()) replayFinalBitmap.recycle();
-                    replayFinalBitmap = null;
-                    replayRunnable = null;
-                    invalidate();
-                    return;
-                }
-                EditCommand[] commands = undo.toArray(new EditCommand[0]);
-                if (replayIndex < commands.length) {
-                    commands[replayIndex].apply(new Canvas(inkBitmap));
-                }
-                replayIndex++;
-                invalidate();
-                postDelayed(this, replayDelayMs);
-            }
-        };
-        post(replayRunnable);
-        return true;
-    }
-
-    public void stopReplaySession() {
-        if (replayRunnable != null) removeCallbacks(replayRunnable);
-        replayRunnable = null;
-        replaying = false;
-        if (replayFinalBitmap != null && !replayFinalBitmap.isRecycled()) {
-            Bitmap old = inkBitmap;
-            inkBitmap = replayFinalBitmap;
-            replayFinalBitmap = null;
-            if (old != null && old != baseBitmap && !old.isRecycled()) old.recycle();
-        }
-        replayIndex = 0;
-        invalidate();
-    }
-
-    public void beginPinPlacement() {
-        placingPin = true;
-        setWriteMode(true);
-        cancelLiveStroke();
-        invalidate();
-    }
-
-    public void setSoundEngine(SoundEngine soundEngine) {
-        this.soundEngine = soundEngine;
     }
 
     public void setTool(int tool) {
@@ -356,13 +178,11 @@ public final class PaperCanvasView extends View {
 
     public void setMarginEnabled(boolean enabled) {
         marginEnabled = enabled;
-        rebuildPaperCache();
         invalidate();
     }
 
     public void setPaperType(String type) {
         paperType = type == null ? PAPER_RULED : type;
-        rebuildPaperCache();
         invalidate();
     }
 
@@ -391,9 +211,6 @@ public final class PaperCanvasView extends View {
         baseBitmap = inkBitmap.copy(Bitmap.Config.ARGB_8888, true);
         undo.clear();
         redo.clear();
-        clearGhostBitmap();
-        stopReplaySession();
-        marksOnlyMode = false;
         resetViewport();
         invalidate();
     }
@@ -467,10 +284,7 @@ public final class PaperCanvasView extends View {
     private void execute(EditCommand command) {
         if (command == null || inkBitmap == null) return;
         undo.addLast(command);
-        while (undo.size() > 80) {
-            EditCommand old = undo.removeFirst();
-            old.release();
-        }
+        trimUndoHistory();
         releaseRedo();
         applyCommand(command);
         notifyDirty();
@@ -480,43 +294,13 @@ public final class PaperCanvasView extends View {
         command.apply(new Canvas(inkBitmap));
     }
 
-    private void rebuildPaperCache() {
-        Bitmap old = paperBitmap;
-        paperBitmap = Bitmap.createBitmap(PAGE_WIDTH, PAGE_HEIGHT, Bitmap.Config.ARGB_8888);
-        drawPaperBackground(new Canvas(paperBitmap), paperType, marginEnabled);
-        if (old != null && !old.isRecycled()) old.recycle();
-    }
-
-    private StudyPin findPinNear(float x, float y) {
-        if (studyPins == null) return null;
-        final float threshold = 42f;
-        StudyPin nearest = null;
-        float best = threshold * threshold;
-        for (StudyPin pin : studyPins) {
-            float dx = pin.x - x;
-            float dy = pin.y - y;
-            float d2 = dx * dx + dy * dy;
-            if (d2 <= best) {
-                best = d2;
-                nearest = pin;
-            }
-        }
-        return nearest;
-    }
-
     private void rebuildFromBase() {
-        if (baseBitmap == null) return;
-        Bitmap rebuilt = baseBitmap.copy(Bitmap.Config.ARGB_8888, true);
-        Bitmap old = inkBitmap;
-        inkBitmap = rebuilt;
-
+        if (baseBitmap == null || inkBitmap == null || inkBitmap.isRecycled()) return;
         Canvas canvas = new Canvas(inkBitmap);
+        canvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR);
+        canvas.drawBitmap(baseBitmap, 0f, 0f, bitmapPaint);
         for (EditCommand command : undo) {
             command.apply(canvas);
-        }
-
-        if (old != null && old != baseBitmap && !old.isRecycled()) {
-            old.recycle();
         }
     }
 
@@ -526,17 +310,20 @@ public final class PaperCanvasView extends View {
         }
     }
 
-    private void notifyDirty() {
-        if (listener != null) listener.onCanvasDirty();
+    private void trimUndoHistory() {
+        while (undo.size() > 40) {
+            EditCommand old = undo.removeFirst();
+            old.release();
+        }
     }
 
-    @Override
-    protected void onDetachedFromWindow() {
-        stopReplaySession();
-        cancelLiveStroke();
-        if (paperBitmap != null && !paperBitmap.isRecycled()) paperBitmap.recycle();
-        paperBitmap = null;
-        super.onDetachedFromWindow();
+    private void clearHistory() {
+        while (!undo.isEmpty()) undo.removeFirst().release();
+        while (!redo.isEmpty()) redo.removeFirst().release();
+    }
+
+    private void notifyDirty() {
+        if (listener != null) listener.onCanvasDirty();
     }
 
     @Override
@@ -586,58 +373,10 @@ public final class PaperCanvasView extends View {
         canvas.translate(pageRect.left, pageRect.top);
         canvas.scale(scale, scale);
 
-        if (paperBitmap != null && !paperBitmap.isRecycled()) {
-            canvas.drawBitmap(paperBitmap, 0f, 0f, bitmapPaint);
-        } else {
-            drawPaperBackground(canvas, paperType, marginEnabled);
-        }
+        drawPaperBackground(canvas, paperType, marginEnabled);
 
-        if (!recallMode && ghostBitmap != null && !ghostBitmap.isRecycled() && ghostAlpha > 0f) {
-            Paint ghostPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
-            ghostPaint.setAlpha(Math.round(255f * ghostAlpha));
-            canvas.drawBitmap(ghostBitmap, 0f, 0f, ghostPaint);
-        }
-
-        if (!recallMode && !marksOnlyMode && inkBitmap != null) {
+        if (inkBitmap != null) {
             canvas.drawBitmap(inkBitmap, 0f, 0f, bitmapPaint);
-        }
-
-        if (!recallMode && studyPins != null) {
-            Paint pinFill = new Paint(Paint.ANTI_ALIAS_FLAG);
-            Paint pinRing = new Paint(Paint.ANTI_ALIAS_FLAG);
-            pinRing.setStyle(Paint.Style.STROKE);
-            pinRing.setStrokeWidth(5f);
-            pinRing.setColor(Color.WHITE);
-            float pinRadius = 18f;
-            for (StudyPin pin : studyPins) {
-                if (pin.resolved) {
-                    pinFill.setColor(0xFF7F8794);
-                    pinFill.setAlpha(150);
-                } else if (NotebookStore.StudyMark.DOUBT.equals(pin.type)) {
-                    pinFill.setColor(0xFFE58A23);
-                    pinFill.setAlpha(255);
-                } else if (NotebookStore.StudyMark.MISTAKE.equals(pin.type)) {
-                    pinFill.setColor(0xFFD64545);
-                    pinFill.setAlpha(255);
-                } else if (NotebookStore.StudyMark.IMPORTANT.equals(pin.type)) {
-                    pinFill.setColor(0xFFE1B21D);
-                    pinFill.setAlpha(255);
-                } else {
-                    pinFill.setColor(0xFF3D6FE8);
-                    pinFill.setAlpha(255);
-                }
-                canvas.drawCircle(pin.x, pin.y, pinRadius, pinFill);
-                canvas.drawCircle(pin.x, pin.y, pinRadius + 3f, pinRing);
-                if (pin.label != null && !pin.label.isEmpty()) {
-                    Paint labelPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-                    labelPaint.setColor(Color.WHITE);
-                    labelPaint.setTextSize(18f);
-                    labelPaint.setTypeface(Typeface.DEFAULT_BOLD);
-                    labelPaint.setTextAlign(Paint.Align.CENTER);
-                    String shortLabel = pin.label.length() > 2 ? pin.label.substring(0, 2) : pin.label;
-                    canvas.drawText(shortLabel, pin.x, pin.y + 6f, labelPaint);
-                }
-            }
         }
 
         if (liveStrokeActive && tool != TOOL_ERASER
@@ -733,28 +472,6 @@ public final class PaperCanvasView extends View {
 
     @Override
     public boolean onTouchEvent(MotionEvent event) {
-        if (replaying) return true;
-        if (placingPin) {
-            if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
-                screenToPage(event.getX(), event.getY(), pagePoint);
-                placingPin = false;
-                if (interactionListener != null) {
-                    interactionListener.onPinPlaced(pagePoint[0], pagePoint[1]);
-                }
-                invalidate();
-                return true;
-            }
-            return true;
-        }
-        if (recallMode || marksOnlyMode) {
-            if (marksOnlyMode && event.getActionMasked() == MotionEvent.ACTION_DOWN
-                    && interactionListener != null) {
-                screenToPage(event.getX(), event.getY(), pagePoint);
-                StudyPin hit = findPinNear(pagePoint[0], pagePoint[1]);
-                if (hit != null) interactionListener.onPinTapped(hit.x, hit.y);
-            }
-            return true;
-        }
         if (!writeMode) return handlePanTouch(event);
         return handleWriteTouch(event);
     }
@@ -851,7 +568,6 @@ public final class PaperCanvasView extends View {
                     appendLivePoint(pagePoint[0], pagePoint[1]);
 
                     postInvalidateOnAnimation();
-                    if (soundEngine != null && tool != TOOL_ERASER) soundEngine.tick();
                 } else if (isShapeTool(tool)) {
                     screenToPage(event.getX(index), event.getY(index), pagePoint);
                     shapeEndX = pagePoint[0];
@@ -948,8 +664,20 @@ public final class PaperCanvasView extends View {
 
     private void beginLiveStroke(float x, float y) {
         liveStroke.reset();
-        livePoints.clear();
-        livePoints.add(new PointF(x, y));
+        livePointCount = 0;
+        if (livePointCount >= livePointX.length) {
+            if (livePointX.length >= 4096) return;
+            int newSize = Math.min(4096, livePointX.length * 2);
+            float[] nx = new float[newSize];
+            float[] ny = new float[newSize];
+            System.arraycopy(livePointX, 0, nx, 0, livePointCount);
+            System.arraycopy(livePointY, 0, ny, 0, livePointCount);
+            livePointX = nx;
+            livePointY = ny;
+        }
+        livePointX[livePointCount] = x;
+        livePointY[livePointCount] = y;
+        livePointCount++;
         liveStroke.moveTo(x, y);
         liveLastX = x;
         liveLastY = y;
@@ -957,9 +685,6 @@ public final class PaperCanvasView extends View {
         liveCurveEndY = y;
         liveStrokeActive = true;
         liveStrokeMoved = false;
-        if (interactionListener != null) {
-            interactionListener.onStrokeStarted(x, y, tool);
-        }
     }
 
     private void appendLivePoint(float rawX, float rawY) {
@@ -973,11 +698,23 @@ public final class PaperCanvasView extends View {
         float y = liveLastY + (rawY - liveLastY) * alpha;
 
         float distance = (float) Math.hypot(x - liveLastX, y - liveLastY);
-        if (distance < 0.22f) return;
+        if (distance < 1.15f) return;
 
-        livePoints.add(new PointF(x, y));
+        if (livePointCount >= livePointX.length) {
+            if (livePointX.length >= 4096) return;
+            int newSize = Math.min(4096, livePointX.length * 2);
+            float[] nx = new float[newSize];
+            float[] ny = new float[newSize];
+            System.arraycopy(livePointX, 0, nx, 0, livePointCount);
+            System.arraycopy(livePointY, 0, ny, 0, livePointCount);
+            livePointX = nx;
+            livePointY = ny;
+        }
+        livePointX[livePointCount] = x;
+        livePointY[livePointCount] = y;
+        livePointCount++;
 
-        if (livePoints.size() == 2) {
+        if (livePointCount == 2) {
             liveStroke.lineTo(x, y);
             liveCurveEndX = x;
             liveCurveEndY = y;
@@ -1001,53 +738,47 @@ public final class PaperCanvasView extends View {
         liveStrokeMoved = true;
     }
 
+    private final Paint eraserPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+
     private void drawImmediateEraserSegment(float x1, float y1, float x2, float y2) {
         if (inkBitmap == null) return;
 
-        Paint eraser = new Paint(Paint.ANTI_ALIAS_FLAG);
-        eraser.setStyle(Paint.Style.STROKE);
-        eraser.setStrokeCap(Paint.Cap.ROUND);
-        eraser.setStrokeJoin(Paint.Join.ROUND);
-        eraser.setStrokeWidth(Math.max(8f, penSize * 3.2f));
-        eraser.setColor(Color.TRANSPARENT);
-        eraser.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.CLEAR));
+        eraserPaint.setStyle(Paint.Style.STROKE);
+        eraserPaint.setStrokeCap(Paint.Cap.ROUND);
+        eraserPaint.setStrokeJoin(Paint.Join.ROUND);
+        eraserPaint.setStrokeWidth(Math.max(8f, penSize * 3.2f));
+        eraserPaint.setColor(Color.TRANSPARENT);
+        eraserPaint.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.CLEAR));
 
-        Canvas bitmapCanvas = new Canvas(inkBitmap);
-        bitmapCanvas.drawLine(x1, y1, x2, y2, eraser);
-        eraser.setXfermode(null);
+        new Canvas(inkBitmap).drawLine(x1, y1, x2, y2, eraserPaint);
+        eraserPaint.setXfermode(null);
     }
 
     private void commitLiveStroke() {
-        if (!liveStrokeActive || livePoints.isEmpty()) {
+        if (!liveStrokeActive || livePointCount == 0) {
             cancelLiveStroke();
             return;
         }
 
-        ArrayList<PointF> points = new ArrayList<>(livePoints.size());
-        for (PointF point : livePoints) {
-            points.add(new PointF(point.x, point.y));
-        }
+        StrokeCommand command = StrokeCommand.fromBuffers(
+                livePointX, livePointY, livePointCount, inkColor, penSize, tool
+        );
 
         if (tool == TOOL_ERASER) {
-            // The erase has already been applied live. Add the command to history only;
-            // executing it again is unnecessary and can create extra work on large strokes.
-            undo.addLast(new StrokeCommand(points, inkColor, penSize, tool));
-            while (undo.size() > 80) {
-                EditCommand old = undo.removeFirst();
-                old.release();
-            }
+            undo.addLast(command);
+            trimUndoHistory();
             releaseRedo();
             notifyDirty();
             cancelLiveStroke();
         } else {
-            execute(new StrokeCommand(points, inkColor, penSize, tool));
+            execute(command);
             cancelLiveStroke();
         }
     }
 
     private void cancelLiveStroke() {
         liveStroke.reset();
-        livePoints.clear();
+        livePointCount = 0;
         liveStrokeActive = false;
         liveStrokeMoved = false;
         drawing = false;
@@ -1118,48 +849,31 @@ public final class PaperCanvasView extends View {
         void release() {}
     }
 
-    private static Path buildSmoothPath(ArrayList<PointF> points) {
-        Path path = new Path();
-        if (points.isEmpty()) return path;
-
-        PointF first = points.get(0);
-        path.moveTo(first.x, first.y);
-
-        if (points.size() == 1) return path;
-        if (points.size() == 2) {
-            PointF second = points.get(1);
-            path.lineTo(second.x, second.y);
-            return path;
-        }
-
-        PointF previous = points.get(0);
-        for (int i = 1; i < points.size(); i++) {
-            PointF current = points.get(i);
-            if (i == points.size() - 1) {
-                path.quadTo(previous.x, previous.y, current.x, current.y);
-            } else {
-                PointF next = points.get(i + 1);
-                float midX = (current.x + next.x) * 0.5f;
-                float midY = (current.y + next.y) * 0.5f;
-                path.quadTo(current.x, current.y, midX, midY);
-            }
-            previous = current;
-        }
-
-        return path;
-    }
-
     private static final class StrokeCommand extends EditCommand {
-        private final ArrayList<PointF> points;
+        private final float[] xs;
+        private final float[] ys;
+        private final int count;
         private final int color;
         private final float width;
         private final int tool;
 
-        StrokeCommand(ArrayList<PointF> points, int color, float width, int tool) {
-            this.points = points;
+        private StrokeCommand(float[] xs, float[] ys, int count, int color, float width, int tool) {
+            this.xs = xs;
+            this.ys = ys;
+            this.count = count;
             this.color = color;
             this.width = width;
             this.tool = tool;
+        }
+
+        static StrokeCommand fromBuffers(float[] xs, float[] ys, int count,
+                                          int color, float width, int tool) {
+            int safeCount = Math.max(1, Math.min(count, Math.min(xs.length, ys.length)));
+            float[] copyX = new float[safeCount];
+            float[] copyY = new float[safeCount];
+            System.arraycopy(xs, 0, copyX, 0, safeCount);
+            System.arraycopy(ys, 0, copyY, 0, safeCount);
+            return new StrokeCommand(copyX, copyY, safeCount, color, width, tool);
         }
 
         @Override
@@ -1180,14 +894,24 @@ public final class PaperCanvasView extends View {
                 if (tool == TOOL_HIGHLIGHTER) p.setStrokeCap(Paint.Cap.SQUARE);
             }
 
-            Path path = buildSmoothPath(points);
-            if (points.size() == 1) {
+            if (count == 1) {
                 p.setStyle(Paint.Style.FILL);
-                canvas.drawCircle(points.get(0).x, points.get(0).y, Math.max(0.8f, p.getStrokeWidth() * 0.5f), p);
+                canvas.drawCircle(xs[0], ys[0],
+                        Math.max(0.8f, p.getStrokeWidth() * 0.5f), p);
             } else {
+                Path path = new Path();
+                path.moveTo(xs[0], ys[0]);
+                for (int i = 1; i < count; i++) {
+                    if (i == count - 1) {
+                        path.quadTo(xs[i - 1], ys[i - 1], xs[i], ys[i]);
+                    } else {
+                        float midX = (xs[i] + xs[i + 1]) * 0.5f;
+                        float midY = (ys[i] + ys[i + 1]) * 0.5f;
+                        path.quadTo(xs[i], ys[i], midX, midY);
+                    }
+                }
                 canvas.drawPath(path, p);
             }
-
             p.setXfermode(null);
         }
     }
@@ -1342,41 +1066,6 @@ public final class PaperCanvasView extends View {
             grid.setStrokeWidth(2f);
             for (int y = 80; y < PAGE_HEIGHT; y += 248) {
                 canvas.drawLine(0, y, PAGE_WIDTH, y, grid);
-            }
-        } else if (PAPER_EXAM_2.equals(type) || PAPER_EXAM_3.equals(type) || PAPER_EXAM_4.equals(type)) {
-            for (int y = 205; y < PAGE_HEIGHT; y += 70) {
-                canvas.drawLine(132, y, PAGE_WIDTH - 70, y, grid);
-            }
-            Paint header = new Paint(Paint.ANTI_ALIAS_FLAG);
-            header.setColor(Color.rgb(88, 96, 112));
-            header.setTextSize(30f);
-            header.setTypeface(Typeface.DEFAULT_BOLD);
-            String marks = PAPER_EXAM_2.equals(type) ? "2 MARK ANSWER" :
-                    PAPER_EXAM_3.equals(type) ? "3 MARK ANSWER" : "4 MARK ANSWER";
-            canvas.drawText(marks, 145, 72, header);
-        } else if (PAPER_EXPERIMENT.equals(type)) {
-            Paint title = new Paint(Paint.ANTI_ALIAS_FLAG);
-            title.setColor(Color.rgb(75, 84, 102));
-            title.setTextSize(28f);
-            title.setTypeface(Typeface.DEFAULT_BOLD);
-            canvas.drawText("SCIENCE EXPERIMENT", 145, 68, title);
-            String[] sections = {"Aim", "Apparatus / Materials", "Procedure", "Observations", "Calculations", "Result", "Precautions"};
-            float top = 120f;
-            Paint line = new Paint(Paint.ANTI_ALIAS_FLAG);
-            line.setColor(Color.rgb(218, 223, 231));
-            line.setStrokeWidth(1.5f);
-            for (String section : sections) {
-                Paint label = new Paint(Paint.ANTI_ALIAS_FLAG);
-                label.setColor(Color.rgb(88, 96, 112));
-                label.setTextSize(22f);
-                label.setTypeface(Typeface.DEFAULT_BOLD);
-                canvas.drawText(section, 145, top, label);
-                top += 20f;
-                for (int i = 0; i < 3; i++) {
-                    canvas.drawLine(145, top + i * 58f, PAGE_WIDTH - 90, top + i * 58f, line);
-                }
-                top += 205f;
-                if (top > PAGE_HEIGHT - 140) break;
             }
         }
 
