@@ -38,9 +38,9 @@ tasks.register("prepareAiModel") {
                         }
                     }
                 }
-                def tmp = new File(aiAssetsDir, "$aiModelName.part")
+                def downloadedFile = new File(aiAssetsDir, "$aiModelName.part")
                 if (aiModelFile.exists()) aiModelFile.delete()
-                if (!tmp.renameTo(aiModelFile)) throw new GradleException("Unable to finalize AI model asset")
+                if (!downloadedFile.renameTo(aiModelFile)) throw new GradleException("Unable to finalize AI model asset")
             }
         }
 
