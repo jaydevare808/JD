@@ -10,8 +10,8 @@ android {
         applicationId 'com.jd.papernote'
         minSdk 26
         targetSdk 36
-        versionCode 21
-        versionName '2.4.0'
+        versionCode 22
+        versionName '2.5.0'
     }
 
     compileOptions {
@@ -44,16 +44,16 @@ dependencies {
 }
 
 def paperNoteAiModel = file("$projectDir/src/main/assets/PaperNote-AI.gguf")
-def paperNoteAiModelUrl = "https://huggingface.co/bartowski/SmolLM2-360M-Instruct-GGUF/resolve/main/SmolLM2-360M-Instruct-Q4_K_M.gguf"
+def paperNoteAiModelUrl = "https://huggingface.co/bartowski/SmolLM2-135M-Instruct-GGUF/resolve/main/SmolLM2-135M-Instruct-Q4_K_M.gguf"
 
 tasks.register("preparePaperNoteAiModel") {
     outputs.file(paperNoteAiModel)
     doLast {
-        if (paperNoteAiModel.exists() && paperNoteAiModel.length() >= 200_000_000L) {
+        if (paperNoteAiModel.exists() && paperNoteAiModel.length() >= 90_000_000L) {
             return
         }
         paperNoteAiModel.parentFile.mkdirs()
-        logger.lifecycle("Downloading PaperNote offline AI model (~271 MB)...")
+        logger.lifecycle("Downloading PaperNote offline AI model (~105 MB)...")
         def connection = new URL(paperNoteAiModelUrl).openConnection()
         connection.setInstanceFollowRedirects(true)
         connection.setConnectTimeout(30_000)
@@ -73,7 +73,7 @@ tasks.register("preparePaperNoteAiModel") {
                     downloadedBytes += read
                 }
                 output.flush()
-                if (downloadedBytes < 200_000_000L) {
+                if (downloadedBytes < 80_000_000L) {
                     throw new GradleException("PaperNote AI model download is unexpectedly small: " + downloadedBytes + " bytes")
                 }
                 if (expected > 0 && downloadedBytes != expected) {
