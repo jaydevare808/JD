@@ -805,8 +805,35 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
             case "calculator": showCalculator(); break;
             case "timer": showFocusTimer(); break;
             case "checklist": showStudyChecklist(); break;
+            case "ai":
+                openAiAssistant();
+                break;
+            case "ai_save":
+                saveAiAnswerToCurrentPage();
+                break;
             default: showStudyTools(null); break;
         }
+    }
+
+    private void openAiAssistant() {
+        if (currentNotebook == null) return;
+        Intent intent = new Intent(this, AiAssistantActivity.class);
+        intent.putExtra("notebook_id", currentNotebook.id);
+        intent.putExtra("page_index", currentPageIndex);
+        startActivity(intent);
+    }
+
+    private void saveAiAnswerToCurrentPage() {
+        String aiText = getIntent().getStringExtra("ai_text");
+        if (aiText == null || aiText.trim().isEmpty()) {
+            toast("No AI answer is ready to save.");
+            return;
+        }
+        String content = "PAPERNOTE AI
+
+" + aiText.trim();
+        canvasView.addText(content, 145f, 180f);
+        toast("AI answer added to this page");
     }
 
     private void openStudyWorkspace() {
@@ -837,6 +864,7 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
 
     private void showStudyTools(View anchor) {
         PopupMenu menu = new PopupMenu(this, anchor);
+        menu.getMenu().add("PaperNote AI  •  local study tutor");
         menu.getMenu().add("Study marks  •  doubt / mistake / important / revise");
         menu.getMenu().add("Study inbox");
         menu.getMenu().add("Page analytics  •  time / strokes / heatmap");
@@ -850,6 +878,10 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
         if (examEndAt > 0L) menu.getMenu().add("Stop exam timer");
         menu.setOnMenuItemClickListener(item -> {
             String title = item.getTitle().toString();
+            if (title.startsWith("PaperNote AI")) {
+                openAiAssistant();
+                return true;
+            }
             if (title.startsWith("Study marks")) {
                 showStudyMarksMenu();
                 return true;
