@@ -526,15 +526,18 @@ public final class MainActivity extends Activity implements NoteCanvasView.Liste
                 break;
             }
         }
+        final int initialChecked = checked;
 
         new AlertDialog.Builder(this)
                 .setTitle("Paper")
-                .setSingleChoiceItems(labels, checked, null)
+                .setSingleChoiceItems(labels, initialChecked, null)
                 .setNegativeButton("Cancel", null)
                 .setPositiveButton("Apply", (d, w) -> {
                     android.widget.ListView list = ((AlertDialog) d).getListView();
-                    int selected = list == null ? checked : list.getCheckedItemPosition();
-                    if (selected < 0 || selected >= values.length) selected = checked;
+                    int selected = list == null
+                            ? initialChecked
+                            : list.getCheckedItemPosition();
+                    if (selected < 0 || selected >= values.length) selected = initialChecked;
 
                     notebook.pages.get(pageIndex).paperType = values[selected];
                     canvas.setPaperType(values[selected]);
