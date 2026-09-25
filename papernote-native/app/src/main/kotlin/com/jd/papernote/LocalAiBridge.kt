@@ -42,7 +42,7 @@ object LocalAiBridge {
             try {
                 val modelFile = File(context.filesDir, "papernote-ai/PaperNote-AI.gguf")
                 modelFile.parentFile?.mkdirs()
-                if (!modelFile.exists() || modelFile.length() < 80_000_000L) {
+                if (!modelFile.exists() || modelFile.length() < 200_000_000L) {
                     copyBundledModel(context, modelFile)
                 }
 
