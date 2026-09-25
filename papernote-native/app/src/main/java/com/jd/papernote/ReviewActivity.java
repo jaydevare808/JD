@@ -6,6 +6,7 @@ import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
+import android.text.InputType;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
@@ -77,9 +78,14 @@ public final class ReviewActivity extends Activity {
         titleLp.setMargins(dp(8), 0, 0, 0);
         header.addView(titleBox, titleLp);
 
+        Button add = button("+", false, true);
+        add.setTextSize(18);
+        add.setOnClickListener(v -> showAddCard());
+        header.addView(add, new LinearLayout.LayoutParams(dp(44), dp(38)));
+
         progress = text("", 11, 0xFFE5EAF3, true);
         progress.setGravity(Gravity.CENTER);
-        header.addView(progress, new LinearLayout.LayoutParams(dp(78), dp(38)));
+        header.addView(progress, new LinearLayout.LayoutParams(dp(72), dp(38)));
         root.addView(header);
 
         ScrollView scroll = new ScrollView(this);
@@ -149,6 +155,56 @@ public final class ReviewActivity extends Activity {
         root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1f));
         setContentView(root);
         render();
+    }
+
+    private void showAddCard() {
+        if (notebook == null || notebook.pages.isEmpty()) {
+            toast("Create a notebook first.");
+            return;
+        }
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(8), dp(3), dp(8), 0);
+
+        TextView hint = text("Create a card from a formula, definition, mistake or question.", 12, 0xFF667085, false);
+        box.addView(hint);
+
+        EditText frontInput = new EditText(this);
+        frontInput.setHint("Front / question");
+        frontInput.setMinLines(2);
+        frontInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
+        box.addView(frontInput);
+
+        EditText backInput = new EditText(this);
+        backInput.setHint("Back / answer");
+        backInput.setMinLines(3);
+        backInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
+        box.addView(backInput);
+
+        EditText tagInput = new EditText(this);
+        tagInput.setHint("Tag, e.g. Physics • Current Electricity");
+        tagInput.setSingleLine(true);
+        box.addView(tagInput);
+
+        new AlertDialog.Builder(this)
+                .setTitle("New review card")
+                .setView(box)
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Save", (d, which) -> {
+                    try {
+                        NotebookStore.PageMeta page = notebook.pages.get(0);
+                        store.addReviewCard(page.id, frontInput.getText().toString(), backInput.getText().toString(), tagInput.getText().toString());
+                        loadDue();
+                        index = 0;
+                        render();
+                        toast("Review card added");
+                    } catch (Exception e) {
+                        toast("Front and back are required.");
+                    }
+                })
+                .setNeutralButton("AI generate", null)
+                .create()
+                .show();
     }
 
     private void render() {
