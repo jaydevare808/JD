@@ -22,18 +22,6 @@
             android:screenOrientation="unspecified"
             android:exported="false" />
         <activity
-            android:name=".StudyToolsActivity"
-            android:screenOrientation="unspecified"
-            android:exported="false" />
-        <activity
-            android:name=".StudyWorkspaceActivity"
-            android:screenOrientation="unspecified"
-            android:exported="false" />
-        <activity
-            android:name=".StudyHubActivity"
-            android:screenOrientation="unspecified"
-            android:exported="false" />
-        <activity
             android:name=".MainActivity"
             android:screenOrientation="unspecified"
             android:exported="true"
