@@ -230,6 +230,16 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
         aiParams.setMargins(dp(16), dp(2), dp(16), dp(12));
         root.addView(aiCard, aiParams);
 
+        int dueCards = 0;
+        for (NotebookStore.NotebookMeta n : notebooks) {
+            dueCards += store.getDueReviewCards(n).size();
+        }
+        Button reviewToday = styledButton("Review Today  •  " + dueCards + " due", false);
+        reviewToday.setOnClickListener(v -> startActivity(new Intent(this, ReviewActivity.class)));
+        LinearLayout.LayoutParams reviewParams = new LinearLayout.LayoutParams(-1, dp(46));
+        reviewParams.setMargins(dp(16), 0, dp(16), dp(10));
+        root.addView(reviewToday, reviewParams);
+
         LinearLayout studySection = new LinearLayout(this);
         studySection.setOrientation(LinearLayout.VERTICAL);
         studySection.setPadding(dp(16), dp(2), dp(16), dp(12));
