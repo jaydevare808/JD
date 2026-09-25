@@ -191,6 +191,7 @@ public final class StudyWorkspaceActivity extends Activity {
         body.addView(attention, bottomMargin(dp(12)));
 
         body.addView(sectionLabel("FULL FEATURE SET"));
+        addFeature(body, "AI Tutor", "Use the bundled on-device assistant for explanations, quizzes, flashcards and study planning.", "ai");
         addFeature(body, "Study markers", "Place D / M / ! / R markers at exact page coordinates and attach review notes.", "marks");
         addFeature(body, "Active recall", "Hide the page for self-testing, then reveal it without changing your saved handwriting.", "recall");
         addFeature(body, "Marks-only view", "Inspect study markers without the handwriting underneath. Tap a marker for details.", "marks_view");
