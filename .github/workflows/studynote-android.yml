@@ -5,6 +5,12 @@ on:
     paths:
       - "education-app/**"
       - ".github/workflows/studynote-android.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "education-app/**"
+      - ".github/workflows/studynote-android.yml"
   workflow_dispatch:
 
 permissions:
