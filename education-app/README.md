@@ -35,3 +35,6 @@ Palm rejection is implemented at the Android MotionEvent layer. In strict mode, 
 The app intentionally does not include cloud sync, bundled AI, PDF import, image insertion, shapes, or other secondary features.
 
 CI verification build: StudyNote 1.2.0.
+
+
+CI recheck after restoring the StudyNote pull-request build trigger.
