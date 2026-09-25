@@ -70,6 +70,40 @@ public final class NotebookStore {
         }
     }
 
+    public static final class ReviewCard {
+        public String id;
+        public String pageId;
+        public String front;
+        public String back;
+        public String tag;
+        public long createdAt;
+        public long dueAt;
+        public int repetitions;
+        public int lapses;
+        public int intervalDays;
+        public float ease;
+
+        public ReviewCard(String id, String pageId, String front, String back, String tag,
+                          long createdAt, long dueAt, int repetitions, int lapses,
+                          int intervalDays, float ease) {
+            this.id = id;
+            this.pageId = pageId;
+            this.front = front;
+            this.back = back;
+            this.tag = tag;
+            this.createdAt = createdAt;
+            this.dueAt = dueAt;
+            this.repetitions = repetitions;
+            this.lapses = lapses;
+            this.intervalDays = intervalDays;
+            this.ease = ease;
+        }
+
+        public boolean isDue(long now) {
+            return dueAt <= now;
+        }
+    }
+
     public static final class StudyLink {
         public String id;
         public String sourcePageId;
@@ -272,6 +306,7 @@ public final class NotebookStore {
 
         root.put("pages", pages);
         root.put("studyFeatures", new JSONObject(exportStudyFeatures(meta)));
+        root.put("reviewCards", exportReviewCards(meta));
         return root.toString();
     }
 
@@ -305,6 +340,7 @@ public final class NotebookStore {
         }
 
         importStudyFeatures(meta, root.optJSONObject("studyFeatures"));
+        importReviewCards(meta, root.optJSONArray("reviewCards"));
         save(meta);
         return meta;
     }
@@ -412,6 +448,132 @@ public final class NotebookStore {
         }
         studyRoot.put("marks", kept);
         saveStudyRoot();
+    }
+
+    public synchronized ReviewCard addReviewCard(String pageId, String front, String back, String tag) throws Exception {
+        String cleanFront = front == null ? "" : front.trim();
+        String cleanBack = back == null ? "" : back.trim();
+        if (cleanFront.isEmpty() || cleanBack.isEmpty()) throw new IllegalArgumentException("Card front and back are required.");
+        JSONObject cards = studyRoot.optJSONObject("reviewCards");
+        if (cards == null) {
+            cards = new JSONObject();
+            studyRoot.put("reviewCards", cards);
+        }
+        ReviewCard card = new ReviewCard(
+                UUID.randomUUID().toString(),
+                pageId,
+                cleanFront,
+                cleanBack,
+                tag == null ? "" : tag.trim(),
+                System.currentTimeMillis(),
+                System.currentTimeMillis(),
+                0,
+                0,
+                0,
+                2.5f
+        );
+        cards.put(card.id, reviewCardJson(card));
+        saveStudyRoot();
+        return card;
+    }
+
+    public synchronized List<ReviewCard> getReviewCards(NotebookMeta notebook) {
+        ArrayList<ReviewCard> result = new ArrayList<>();
+        if (notebook == null) return result;
+        java.util.HashSet<String> pageIds = new java.util.HashSet<>();
+        for (PageMeta page : notebook.pages) pageIds.add(page.id);
+        JSONObject cards = studyRoot.optJSONObject("reviewCards");
+        if (cards == null) return result;
+        java.util.Iterator<String> keys = cards.keys();
+        while (keys.hasNext()) {
+            JSONObject item = cards.optJSONObject(keys.next());
+            if (item == null || !pageIds.contains(item.optString("pageId"))) continue;
+            result.add(parseReviewCard(item));
+        }
+        result.sort(Comparator.comparingLong(c -> c.dueAt));
+        return result;
+    }
+
+    public synchronized List<ReviewCard> getDueReviewCards(NotebookMeta notebook) {
+        ArrayList<ReviewCard> result = new ArrayList<>();
+        long now = System.currentTimeMillis();
+        for (ReviewCard card : getReviewCards(notebook)) {
+            if (card.isDue(now)) result.add(card);
+        }
+        return result;
+    }
+
+    public synchronized void reviewCard(String cardId, int rating) throws Exception {
+        JSONObject cards = studyRoot.optJSONObject("reviewCards");
+        if (cards == null) return;
+        JSONObject item = cards.optJSONObject(cardId);
+        if (item == null) return;
+        ReviewCard card = parseReviewCard(item);
+        int quality = Math.max(0, Math.min(3, rating));
+        if (quality == 0) {
+            card.lapses++;
+            card.repetitions = 0;
+            card.intervalDays = 0;
+            card.ease = Math.max(1.3f, card.ease - 0.20f);
+        } else {
+            if (quality == 1) {
+                card.intervalDays = card.repetitions == 0 ? 1 : Math.max(1, Math.round(card.intervalDays * 1.5f));
+                card.ease = Math.max(1.3f, card.ease - 0.08f);
+            } else if (quality == 2) {
+                if (card.repetitions == 0) card.intervalDays = 1;
+                else if (card.repetitions == 1) card.intervalDays = 3;
+                else card.intervalDays = Math.max(card.intervalDays + 1, Math.round(card.intervalDays * card.ease));
+                card.ease = Math.min(3.0f, card.ease + 0.02f);
+            } else {
+                if (card.repetitions == 0) card.intervalDays = 3;
+                else if (card.repetitions == 1) card.intervalDays = 7;
+                else card.intervalDays = Math.max(card.intervalDays + 2, Math.round(card.intervalDays * (card.ease + 0.15f)));
+                card.ease = Math.min(3.0f, card.ease + 0.08f);
+            }
+            card.repetitions++;
+        }
+        card.dueAt = System.currentTimeMillis() + Math.max(1, card.intervalDays) * 24L * 60L * 60L * 1000L;
+        cards.put(card.id, reviewCardJson(card));
+        saveStudyRoot();
+    }
+
+    public synchronized void deleteReviewCard(String cardId) throws Exception {
+        JSONObject cards = studyRoot.optJSONObject("reviewCards");
+        if (cards == null) return;
+        cards.remove(cardId);
+        saveStudyRoot();
+    }
+
+    private ReviewCard parseReviewCard(JSONObject item) {
+        return new ReviewCard(
+                item.optString("id", UUID.randomUUID().toString()),
+                item.optString("pageId"),
+                item.optString("front", ""),
+                item.optString("back", ""),
+                item.optString("tag", ""),
+                item.optLong("createdAt", System.currentTimeMillis()),
+                item.optLong("dueAt", System.currentTimeMillis()),
+                item.optInt("repetitions", 0),
+                item.optInt("lapses", 0),
+                item.optInt("intervalDays", 0),
+                (float) item.optDouble("ease", 2.5)
+        );
+    }
+
+    private JSONObject reviewCardJson(ReviewCard card) throws Exception {
+        JSONObject item = new JSONObject();
+        item.put("id", card.id);
+        item.put("pageId", card.pageId);
+        item.put("front", card.front);
+        item.put("back", card.back);
+        item.put("tag", card.tag);
+        item.put("createdAt", card.createdAt);
+        item.put("dueAt", card.dueAt);
+        item.put("repetitions", card.repetitions);
+        item.put("lapses", card.lapses);
+        item.put("intervalDays", card.intervalDays);
+        item.put("ease", card.ease);
+        return item;
     }
 
     public synchronized PageStats getPageStats(String pageId) {
@@ -679,6 +841,63 @@ public final class NotebookStore {
         saveStudyRoot();
     }
 
+    private JSONArray exportReviewCards(NotebookMeta notebook) throws Exception {
+        JSONArray out = new JSONArray();
+        if (notebook == null) return out;
+        java.util.HashSet<String> pageIds = new java.util.HashSet<>();
+        for (PageMeta page : notebook.pages) pageIds.add(page.id);
+        JSONObject cards = studyRoot.optJSONObject("reviewCards");
+        if (cards == null) return out;
+        java.util.Iterator<String> keys = cards.keys();
+        while (keys.hasNext()) {
+            JSONObject item = cards.optJSONObject(keys.next());
+            if (item != null && pageIds.contains(item.optString("pageId"))) {
+                JSONObject copy = new JSONObject(item.toString());
+                copy.remove("id");
+                copy.put("pageIndex", findPageIndex(notebook, item.optString("pageId")));
+                out.put(copy);
+            }
+        }
+        return out;
+    }
+
+    private int findPageIndex(NotebookMeta notebook, String pageId) {
+        for (int i = 0; i < notebook.pages.size(); i++) {
+            if (pageId.equals(notebook.pages.get(i).id)) return i;
+        }
+        return -1;
+    }
+
+    private void importReviewCards(NotebookMeta notebook, JSONArray data) throws Exception {
+        if (notebook == null || data == null) return;
+        JSONObject cards = studyRoot.optJSONObject("reviewCards");
+        if (cards == null) {
+            cards = new JSONObject();
+            studyRoot.put("reviewCards", cards);
+        }
+        for (int i = 0; i < data.length(); i++) {
+            JSONObject item = data.optJSONObject(i);
+            if (item == null) continue;
+            int pageIndex = item.optInt("pageIndex", -1);
+            if (pageIndex < 0 || pageIndex >= notebook.pages.size()) continue;
+            ReviewCard card = new ReviewCard(
+                    UUID.randomUUID().toString(),
+                    notebook.pages.get(pageIndex).id,
+                    item.optString("front", ""),
+                    item.optString("back", ""),
+                    item.optString("tag", ""),
+                    item.optLong("createdAt", System.currentTimeMillis()),
+                    item.optLong("dueAt", System.currentTimeMillis()),
+                    item.optInt("repetitions", 0),
+                    item.optInt("lapses", 0),
+                    item.optInt("intervalDays", 0),
+                    (float) item.optDouble("ease", 2.5)
+            );
+            cards.put(card.id, reviewCardJson(card));
+        }
+        saveStudyRoot();
+    }
+
     public synchronized void removeStudyFeaturesForNotebook(NotebookMeta notebook) {
         try {
             if (notebook == null) return;
@@ -705,6 +924,20 @@ public final class NotebookStore {
                 }
             }
             studyRoot.put("stats", statsOut);
+
+            JSONObject cardsOut = new JSONObject();
+            JSONObject cards = studyRoot.optJSONObject("reviewCards");
+            if (cards != null) {
+                java.util.Iterator<String> cardKeys = cards.keys();
+                while (cardKeys.hasNext()) {
+                    String key = cardKeys.next();
+                    JSONObject card = cards.optJSONObject(key);
+                    if (card != null && !pageIds.contains(card.optString("pageId"))) {
+                        cardsOut.put(key, card);
+                    }
+                }
+            }
+            studyRoot.put("reviewCards", cardsOut);
 
             JSONArray linksOut = new JSONArray();
             JSONArray links = studyRoot.optJSONArray("links");

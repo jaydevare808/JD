@@ -33,6 +33,11 @@ public final class PaperCanvasView extends View {
     public static final String PAPER_EXAM_3 = "exam_3";
     public static final String PAPER_EXAM_4 = "exam_4";
     public static final String PAPER_EXPERIMENT = "experiment";
+    public static final String PAPER_CORNELL = "cornell";
+    public static final String PAPER_REVISION = "revision";
+    public static final String PAPER_FLASHCARD = "flashcard";
+    public static final String PAPER_MINDMAP = "mindmap";
+    public static final String PAPER_DAILY = "daily";
 
     public static final int TOOL_PEN = 0;
     public static final int TOOL_HIGHLIGHTER = 1;
@@ -1307,6 +1312,19 @@ public final class PaperCanvasView extends View {
         return page;
     }
 
+
+    private static void drawTemplateHeader(Canvas canvas, String title, String subtitle) {
+        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        p.setColor(Color.rgb(75, 84, 102));
+        p.setTextSize(30f);
+        p.setTypeface(Typeface.DEFAULT_BOLD);
+        canvas.drawText(title, 100, 62, p);
+        p.setTextSize(16f);
+        p.setTypeface(Typeface.DEFAULT);
+        p.setColor(Color.rgb(120, 128, 142));
+        canvas.drawText(subtitle, 100, 90, p);
+    }
+
     public static void drawPaperBackground(Canvas canvas, String type, boolean marginEnabled) {
         canvas.drawColor(Color.rgb(255, 252, 245));
 
@@ -1343,6 +1361,49 @@ public final class PaperCanvasView extends View {
             for (int y = 80; y < PAGE_HEIGHT; y += 248) {
                 canvas.drawLine(0, y, PAGE_WIDTH, y, grid);
             }
+        } else if (PAPER_CORNELL.equals(type)) {
+            Paint line = new Paint(Paint.ANTI_ALIAS_FLAG);
+            line.setColor(Color.rgb(216, 221, 230));
+            line.setStrokeWidth(1.5f);
+            canvas.drawLine(230, 108, 230, PAGE_HEIGHT - 70, line);
+            for (int y = 130; y < PAGE_HEIGHT - 60; y += 62) canvas.drawLine(250, y, PAGE_WIDTH - 80, y, line);
+            drawTemplateHeader(canvas, "CORNELL NOTES", "Cues  •  Notes  •  Summary");
+        } else if (PAPER_REVISION.equals(type)) {
+            drawTemplateHeader(canvas, "REVISION SHEET", "Key ideas  •  Formula  •  Common mistakes");
+            Paint line = new Paint(Paint.ANTI_ALIAS_FLAG);
+            line.setColor(Color.rgb(216, 221, 230));
+            for (int y = 135; y < PAGE_HEIGHT - 60; y += 74) canvas.drawLine(100, y, PAGE_WIDTH - 100, y, line);
+        } else if (PAPER_FLASHCARD.equals(type)) {
+            drawTemplateHeader(canvas, "FLASHCARD PAGE", "Question  →  Answer  →  Self-rating");
+            Paint border = new Paint(Paint.ANTI_ALIAS_FLAG);
+            border.setColor(Color.rgb(205, 211, 222));
+            border.setStyle(Paint.Style.STROKE);
+            border.setStrokeWidth(2f);
+            float top = 130f;
+            for (int i = 0; i < 3; i++) {
+                canvas.drawRoundRect(100, top, PAGE_WIDTH - 100, top + 235, 18, 18, border);
+                top += 270;
+            }
+        } else if (PAPER_MINDMAP.equals(type)) {
+            drawTemplateHeader(canvas, "MIND MAP", "Central idea  →  branches  →  examples");
+            Paint circle = new Paint(Paint.ANTI_ALIAS_FLAG);
+            circle.setColor(Color.rgb(219, 225, 236));
+            circle.setStyle(Paint.Style.STROKE);
+            circle.setStrokeWidth(2.5f);
+            float cx = PAGE_WIDTH / 2f, cy = PAGE_HEIGHT / 2f;
+            canvas.drawCircle(cx, cy, 150, circle);
+            for (int i = 0; i < 8; i++) {
+                double a = i * Math.PI / 4.0;
+                float x = cx + (float) Math.cos(a) * 430f;
+                float y = cy + (float) Math.sin(a) * 430f;
+                canvas.drawLine(cx + (float) Math.cos(a) * 150f, cy + (float) Math.sin(a) * 150f, x, y, circle);
+                canvas.drawCircle(x, y, 75, circle);
+            }
+        } else if (PAPER_DAILY.equals(type)) {
+            drawTemplateHeader(canvas, "DAILY STUDY LOG", "Goals  •  Focus  •  Problems  •  Review");
+            Paint line = new Paint(Paint.ANTI_ALIAS_FLAG);
+            line.setColor(Color.rgb(216, 221, 230));
+            for (int y = 135; y < PAGE_HEIGHT - 70; y += 80) canvas.drawLine(120, y, PAGE_WIDTH - 100, y, line);
         } else if (PAPER_EXAM_2.equals(type) || PAPER_EXAM_3.equals(type) || PAPER_EXAM_4.equals(type)) {
             for (int y = 205; y < PAGE_HEIGHT; y += 70) {
                 canvas.drawLine(132, y, PAGE_WIDTH - 70, y, grid);
