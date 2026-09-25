@@ -6,6 +6,7 @@ import dev.ffmpegkit.llama.Llama
 import dev.ffmpegkit.llama.LlamaConfig
 import dev.ffmpegkit.llama.LlamaModel
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -57,7 +58,7 @@ object LocalAiBridge {
             releaseWhenIdle = false
         }
 
-        val job = scope.launch {
+        val job = scope.launch(start = CoroutineStart.LAZY) {
             try {
                 val modelFile = File(context.filesDir, "papernote-ai/PaperNote-AI.gguf")
                 prepareModel(context, modelFile)
@@ -121,6 +122,7 @@ object LocalAiBridge {
         synchronized(lock) {
             activeJob = job
         }
+        job.start()
     }
 
     @JvmStatic
