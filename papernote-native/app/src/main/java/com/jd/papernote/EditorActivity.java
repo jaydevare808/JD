@@ -2059,12 +2059,13 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
                 }
 
                 final int newPageIndex = Math.min(startIndex, notebook.pages.size() - 1);
+                final int importedCount = imported;
                 runOnUiThread(() -> {
                     if (progress.isShowing()) progress.dismiss();
                     currentNotebook = notebook;
                     currentPageIndex = newPageIndex;
                     buildEditor();
-                    toast(imported + " PDF page" + (imported == 1 ? "" : "s") + " imported");
+                    toast(importedCount + " PDF page" + (importedCount == 1 ? "" : "s") + " imported");
                 });
             } catch (Exception e) {
                 runOnUiThread(() -> {
