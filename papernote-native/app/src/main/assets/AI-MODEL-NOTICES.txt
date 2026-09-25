@@ -1,7 +1,7 @@
 PaperNote AI model notices
 
-SmolLM2 360M Instruct, Q4_K_M GGUF
-Source: Hugging Face, bartowski/SmolLM2-360M-Instruct-GGUF
+SmolLM2 135M Instruct, Q4_K_M GGUF
+Source: Hugging Face, bartowski/SmolLM2-135M-Instruct-GGUF
 Model card license: Apache-2.0
 This quantized file is used locally by PaperNote AI Lite.
 
