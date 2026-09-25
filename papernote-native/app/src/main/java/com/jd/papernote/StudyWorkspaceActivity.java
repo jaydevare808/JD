@@ -205,6 +205,7 @@ public final class StudyWorkspaceActivity extends Activity {
         addFeature(body, "Study checklist", "Build a revision checklist and place it on the current page.", "checklist");
         addFeature(body, "Study Hub", "Open progress, timeline and concept-thread summaries.", "hub");
         addFeature(body, "PaperNote AI", "Free on-device tutor for explanations, worked steps, quizzes, revision and study plans.", "ai");
+        addFeature(body, "PDF import", "Bring PDF pages into the current notebook for handwriting annotation and study.", "pdf_import");
 
         TextView footer = text(
                 "PaperNote remains offline-first. Notes, study markers and analytics stay in local app storage.",
