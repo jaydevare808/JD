@@ -88,12 +88,6 @@ android {
         noCompress 'gguf'
     }
 
-    // llama-android ships arm64-v8a native code. This is an explicit compatibility
-    // choice for the on-device AI build, while the rest of PaperNote remains pure Java/Kotlin.
-    ndk {
-        abiFilters 'arm64-v8a'
-    }
-
     buildTypes {
         release {
             signingConfig signingConfigs.debug
