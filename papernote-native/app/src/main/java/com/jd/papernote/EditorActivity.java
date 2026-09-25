@@ -58,6 +58,8 @@ public final class EditorActivity extends Activity implements PaperCanvasView.Li
     private Button writeModeButton;
     private Button palmButton;
     private Button marginButton;
+    private boolean marginEnabled = true;
+    private final Object saveLock = new Object();
 
     private Runnable pendingAutosave;
     private boolean saveInFlight;
@@ -299,7 +301,8 @@ public final class EditorActivity extends Activity implements PaperCanvasView.Li
 
         marginButton = toolbarButton("MARGIN");
         marginButton.setOnClickListener(v -> {
-            canvasView.setMarginEnabled(!isMarginEnabled());
+            marginEnabled = !marginEnabled;
+            canvasView.setMarginEnabled(marginEnabled);
             updateMarginButton();
         });
         row.addView(marginButton);
@@ -308,16 +311,13 @@ public final class EditorActivity extends Activity implements PaperCanvasView.Li
     }
 
     private boolean isMarginEnabled() {
-        // The editor keeps margin enabled by default. Button state reflects the last change.
-        return marginButton != null && marginButton.getTag() == null
-                ? true
-                : marginButton != null && Boolean.TRUE.equals(marginButton.getTag());
+        return marginEnabled;
     }
 
     private void updateMarginButton() {
-        boolean enabled = !isMarginEnabled();
-        marginButton.setTag(enabled);
-        marginButton.setText(enabled ? "MARGIN OFF" : "MARGIN");
+        if (marginButton != null) {
+            marginButton.setText(marginEnabled ? "MARGIN" : "MARGIN OFF");
+        }
     }
 
     private View buildBottomBar() {
@@ -377,7 +377,7 @@ public final class EditorActivity extends Activity implements PaperCanvasView.Li
         canvasView.setTool(PaperCanvasView.TOOL_PEN);
         canvasView.setWriteMode(true);
         canvasView.setPalmShield(true);
-        canvasView.setMarginEnabled(true);
+        canvasView.setMarginEnabled(marginEnabled);
 
         pageLabel.setText("Page " + (currentPageIndex + 1)
                 + " / " + currentNotebook.pages.size());
@@ -511,8 +511,10 @@ public final class EditorActivity extends Activity implements PaperCanvasView.Li
         ioExecutor.submit(() -> {
             boolean ok = true;
             try {
-                store.savePageBitmap(pageId, snapshot);
-                store.save(currentNotebook);
+                synchronized (saveLock) {
+                    store.savePageBitmap(pageId, snapshot);
+                    store.save(currentNotebook);
+                }
             } catch (Exception e) {
                 ok = false;
             } finally {
@@ -544,12 +546,14 @@ public final class EditorActivity extends Activity implements PaperCanvasView.Li
         }
 
         try {
-            NotebookStore.PageMeta page = currentNotebook.pages.get(currentPageIndex);
-            Bitmap source = canvasView.getInkBitmap();
-            if (source != null && !source.isRecycled()) {
-                store.savePageBitmap(page.id, source);
+            synchronized (saveLock) {
+                NotebookStore.PageMeta page = currentNotebook.pages.get(currentPageIndex);
+                Bitmap source = canvasView.getInkBitmap();
+                if (source != null && !source.isRecycled()) {
+                    store.savePageBitmap(page.id, source);
+                }
+                store.save(currentNotebook);
             }
-            store.save(currentNotebook);
             if (saveLabel != null) saveLabel.setText("Saved");
         } catch (Exception e) {
             if (saveLabel != null) saveLabel.setText("Save error");
@@ -625,7 +629,8 @@ public final class EditorActivity extends Activity implements PaperCanvasView.Li
                     chooseRestoreFile();
                     return true;
                 case "Toggle margin":
-                    canvasView.setMarginEnabled(!isMarginEnabled());
+                    marginEnabled = !marginEnabled;
+                    canvasView.setMarginEnabled(marginEnabled);
                     updateMarginButton();
                     return true;
                 case "About passive stylus":
@@ -1042,6 +1047,14 @@ public final class EditorActivity extends Activity implements PaperCanvasView.Li
                     .setMessage(e.getMessage() == null ? "Please try again." : e.getMessage())
                     .setPositiveButton("OK", null)
                     .show();
+        }
+    }
+
+    @Override
+    public void onTrimMemory(int level) {
+        super.onTrimMemory(level);
+        if (level >= TRIM_MEMORY_RUNNING_LOW) {
+            LocalAiBridge.release();
         }
     }
 
