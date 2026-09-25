@@ -33,6 +33,10 @@ public final class PaperCanvasView extends View {
     public static final String PAPER_EXAM_3 = "exam_3";
     public static final String PAPER_EXAM_4 = "exam_4";
     public static final String PAPER_EXPERIMENT = "experiment";
+    public static final String PAPER_CORNELL = "cornell";
+    public static final String PAPER_PROBLEM = "problem_solution";
+    public static final String PAPER_FORMULA = "formula_sheet";
+    public static final String PAPER_FLASHCARDS = "flashcards";
 
     public static final int TOOL_PEN = 0;
     public static final int TOOL_HIGHLIGHTER = 1;
@@ -1378,6 +1382,67 @@ public final class PaperCanvasView extends View {
                 top += 205f;
                 if (top > PAGE_HEIGHT - 140) break;
             }
+        } else if (PAPER_CORNELL.equals(type)) {
+            Paint header = templatePaint(true);
+            canvas.drawText("CORNELL NOTES", 145, 64, header);
+            Paint line = templateLine();
+            float cueX = 360f;
+            canvas.drawLine(cueX, 105, cueX, PAGE_HEIGHT - 110, line);
+            for (int y = 110; y < PAGE_HEIGHT - 100; y += 62) {
+                canvas.drawLine(100, y, PAGE_WIDTH - 90, y, line);
+            }
+            Paint labels = templatePaint(true);
+            labels.setTextSize(20f);
+            canvas.drawText("CUES / QUESTIONS", 120, 95, labels);
+            canvas.drawText("NOTES", cueX + 24, 95, labels);
+            canvas.drawLine(100, PAGE_HEIGHT - 330, PAGE_WIDTH - 90, PAGE_HEIGHT - 330, line);
+            canvas.drawText("SUMMARY", 120, PAGE_HEIGHT - 348, labels);
+            for (int y = PAGE_HEIGHT - 310; y < PAGE_HEIGHT - 105; y += 58) {
+                canvas.drawLine(100, y, PAGE_WIDTH - 90, y, line);
+            }
+        } else if (PAPER_PROBLEM.equals(type)) {
+            Paint header = templatePaint(true);
+            canvas.drawText("PROBLEM → SOLUTION", 145, 64, header);
+            Paint line = templateLine();
+            float top = 115f;
+            String[] labels = {"Problem / Given", "Approach / Formula", "Working", "Final Answer", "Check / Note"};
+            for (String labelText : labels) {
+                Paint label = templatePaint(true);
+                label.setTextSize(22f);
+                canvas.drawText(labelText, 120, top, label);
+                top += 22f;
+                int rows = labelText.equals("Working") ? 4 : 2;
+                for (int i = 0; i < rows; i++) {
+                    canvas.drawLine(120, top + i * 58f, PAGE_WIDTH - 90, top + i * 58f, line);
+                }
+                top += rows * 58f + 34f;
+                if (top > PAGE_HEIGHT - 110) break;
+            }
+        } else if (PAPER_FORMULA.equals(type)) {
+            Paint header = templatePaint(true);
+            canvas.drawText("FORMULA SHEET", 145, 64, header);
+            Paint line = templateLine();
+            for (int y = 120; y < PAGE_HEIGHT - 90; y += 86) {
+                canvas.drawLine(105, y, PAGE_WIDTH - 90, y, line);
+            }
+            for (int x = 460; x < PAGE_WIDTH - 150; x += 350) {
+                canvas.drawLine(x, 120, x, PAGE_HEIGHT - 90, line);
+            }
+            Paint label = templatePaint(false);
+            label.setTextSize(19f);
+            canvas.drawText("Topic", 125, 105, label);
+            canvas.drawText("Formula / Definition", 480, 105, label);
+        } else if (PAPER_FLASHCARDS.equals(type)) {
+            Paint header = templatePaint(true);
+            canvas.drawText("FLASHCARD GRID", 145, 64, header);
+            Paint line = templateLine();
+            float left = 110, right = PAGE_WIDTH - 90, top = 120, bottom = PAGE_HEIGHT - 90;
+            canvas.drawLine((left + right) / 2f, top, (left + right) / 2f, bottom, line);
+            canvas.drawLine(left, (top + bottom) / 2f, right, (top + bottom) / 2f, line);
+            Paint label = templatePaint(false);
+            label.setTextSize(19f);
+            canvas.drawText("FRONT", 150, 155, label);
+            canvas.drawText("BACK", PAGE_WIDTH / 2f + 40, 155, label);
         }
 
         if (marginEnabled) {
@@ -1386,5 +1451,20 @@ public final class PaperCanvasView extends View {
             margin.setStrokeWidth(2f);
             canvas.drawLine(108, 0, 108, PAGE_HEIGHT, margin);
         }
+    }
+
+    private static Paint templatePaint(boolean bold) {
+        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        p.setColor(Color.rgb(84, 93, 110));
+        p.setTextSize(28f);
+        if (bold) p.setTypeface(Typeface.DEFAULT_BOLD);
+        return p;
+    }
+
+    private static Paint templateLine() {
+        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        p.setColor(Color.rgb(215, 220, 229));
+        p.setStrokeWidth(1.5f);
+        return p;
     }
 }
