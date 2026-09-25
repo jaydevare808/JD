@@ -5,7 +5,6 @@
         android:enableOnBackInvokedCallback="false"
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
-        android:fullBackupContent="@xml/backup_rules"
         android:icon="@drawable/ic_launcher"
         android:roundIcon="@drawable/ic_launcher"
         android:label="@string/app_name"
@@ -17,22 +16,6 @@
             android:screenOrientation="unspecified"
             android:exported="false"
             android:configChanges="orientation|screenSize|keyboardHidden" />
-        <activity
-            android:name=".AiAssistantActivity"
-            android:screenOrientation="unspecified"
-            android:exported="false" />
-        <activity
-            android:name=".StudyToolsActivity"
-            android:screenOrientation="unspecified"
-            android:exported="false" />
-        <activity
-            android:name=".StudyWorkspaceActivity"
-            android:screenOrientation="unspecified"
-            android:exported="false" />
-        <activity
-            android:name=".StudyHubActivity"
-            android:screenOrientation="unspecified"
-            android:exported="false" />
         <activity
             android:name=".MainActivity"
             android:screenOrientation="unspecified"
