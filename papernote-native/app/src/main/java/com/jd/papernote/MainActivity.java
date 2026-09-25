@@ -48,7 +48,6 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
     private static final int EXPORT_BACKUP = 3;
 
     private NotebookStore store;
-    private SoundEngine soundEngine;
     private ExecutorService saveExecutor;
     private final Handler saveHandler = new Handler(Looper.getMainLooper());
     private Runnable pendingSave;
@@ -68,7 +67,6 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         store = new NotebookStore(this);
-        soundEngine = new SoundEngine(this);
         saveExecutor = Executors.newSingleThreadExecutor();
 
         Window window = getWindow();
@@ -91,7 +89,6 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
         saveHandler.removeCallbacksAndMessages(null);
         saveCurrentPageNow();
         if (saveExecutor != null) saveExecutor.shutdown();
-        if (soundEngine != null) soundEngine.close();
         super.onDestroy();
     }
 
@@ -470,13 +467,6 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
         });
         controlBar.addView(palmButton);
 
-        soundButton = toolbarButton("SOUND");
-        soundButton.setOnClickListener(v -> {
-            boolean enabled = !soundEngine.isEnabled();
-            soundEngine.setEnabled(enabled);
-            updateSoundButton();
-        });
-        controlBar.addView(soundButton);
 
         controlScroll.addView(controlBar);
         root.addView(controlScroll, new LinearLayout.LayoutParams(-1, dp(54)));
@@ -484,7 +474,6 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
         FrameLayout canvasFrame = new FrameLayout(this);
         canvasView = new PaperCanvasView(this);
         canvasView.setListener(this);
-        canvasView.setSoundEngine(soundEngine);
         canvasFrame.addView(canvasView, new FrameLayout.LayoutParams(-1, -1));
         root.addView(canvasFrame, new LinearLayout.LayoutParams(-1, 0, 1f));
 
@@ -1290,11 +1279,6 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
         }
     }
 
-    private void updateSoundButton() {
-        if (soundButton != null) {
-            soundButton.setText(soundEngine.isEnabled() ? "SOUND✓" : "SOUND");
-        }
-    }
 
     private Button styledButton(String label, boolean primary) {
         Button b = new Button(this);
