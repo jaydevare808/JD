@@ -317,14 +317,18 @@ public final class MainActivity extends Activity {
         subject.setSingleLine(true);
         box.addView(subject);
 
-        String[] templates = {"Ruled", "Graph", "Dot Grid", "Blank", "Math Practice", "Experiment"};
+        String[] templates = {"Ruled", "Graph", "Dot Grid", "Blank", "Math Practice", "Experiment", "Cornell Notes", "Problem → Solution", "Formula Sheet", "Flashcard Grid"};
         final String[] paper = {
                 PaperCanvasView.PAPER_RULED,
                 PaperCanvasView.PAPER_GRAPH,
                 PaperCanvasView.PAPER_DOT,
                 PaperCanvasView.PAPER_BLANK,
                 PaperCanvasView.PAPER_MATH,
-                PaperCanvasView.PAPER_EXPERIMENT
+                PaperCanvasView.PAPER_EXPERIMENT,
+                PaperCanvasView.PAPER_CORNELL,
+                PaperCanvasView.PAPER_PROBLEM,
+                PaperCanvasView.PAPER_FORMULA,
+                PaperCanvasView.PAPER_FLASHCARDS
         };
 
         final int[] selected = {0};
