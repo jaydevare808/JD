@@ -204,6 +204,8 @@ public final class StudyWorkspaceActivity extends Activity {
         addFeature(body, "Focus timer", "Run a local 25-minute focus session without cloud services.", "timer");
         addFeature(body, "Study checklist", "Build a revision checklist and place it on the current page.", "checklist");
         addFeature(body, "Study Hub", "Open progress, timeline and concept-thread summaries.", "hub");
+        addFeature(body, "PaperNote AI", "Free on-device tutor for explanations, worked steps, quizzes, revision and study plans.", "ai");
+        addFeature(body, "PDF import", "Bring PDF pages into the current notebook for handwriting annotation and study.", "pdf_import");
 
         TextView footer = text(
                 "PaperNote remains offline-first. Notes, study markers and analytics stay in local app storage.",
@@ -375,6 +377,15 @@ public final class StudyWorkspaceActivity extends Activity {
 
     private void openEditor(String feature, int pageIndex) {
         NotebookStore.NotebookMeta n = selectedNotebook();
+        if ("ai".equals(feature)) {
+            Intent intent = new Intent(this, AiAssistantActivity.class);
+            if (n != null) {
+                intent.putExtra("notebook_id", n.id);
+                intent.putExtra("page_index", Math.max(0, Math.min(pageIndex, n.pages.size() - 1)));
+            }
+            startActivity(intent);
+            return;
+        }
         if (n == null) return;
         Intent intent = new Intent(this, EditorActivity.class);
         intent.putExtra("notebook_id", n.id);

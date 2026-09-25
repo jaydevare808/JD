@@ -12,6 +12,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.ParcelFileDescriptor;
 import android.provider.Settings;
 import android.text.InputType;
 import android.view.Gravity;
@@ -83,6 +84,7 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
     private int pendingExport = 0;
     private ExportManager.Format pendingExportFormat;
     private static final int REQUEST_STORAGE_PERMISSION = 505;
+    private static final int REQUEST_PDF_IMPORT = 506;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -805,8 +807,36 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
             case "calculator": showCalculator(); break;
             case "timer": showFocusTimer(); break;
             case "checklist": showStudyChecklist(); break;
+            case "pdf_import":
+                choosePdf();
+                break;
+            case "ai":
+                openAiAssistant();
+                break;
+            case "ai_save":
+                saveAiAnswerToCurrentPage();
+                break;
             default: showStudyTools(null); break;
         }
+    }
+
+    private void openAiAssistant() {
+        if (currentNotebook == null) return;
+        Intent intent = new Intent(this, AiAssistantActivity.class);
+        intent.putExtra("notebook_id", currentNotebook.id);
+        intent.putExtra("page_index", currentPageIndex);
+        startActivity(intent);
+    }
+
+    private void saveAiAnswerToCurrentPage() {
+        String aiText = getIntent().getStringExtra("ai_text");
+        if (aiText == null || aiText.trim().isEmpty()) {
+            toast("No AI answer is ready to save.");
+            return;
+        }
+        String content = "PAPERNOTE AI\\n\\n" + aiText.trim();
+        canvasView.addText(content, 145f, 180f);
+        toast("AI answer added to this page");
     }
 
     private void openStudyWorkspace() {
@@ -837,6 +867,7 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
 
     private void showStudyTools(View anchor) {
         PopupMenu menu = new PopupMenu(this, anchor);
+        menu.getMenu().add("PaperNote AI  •  local study tutor");
         menu.getMenu().add("Study marks  •  doubt / mistake / important / revise");
         menu.getMenu().add("Study inbox");
         menu.getMenu().add("Page analytics  •  time / strokes / heatmap");
@@ -846,10 +877,15 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
         menu.getMenu().add("Science experiment template");
         menu.getMenu().add("Concept thread");
         menu.getMenu().add("Handwriting replay");
+        menu.getMenu().add("Import PDF pages");
         menu.getMenu().add("Quick-share notebook backup");
         if (examEndAt > 0L) menu.getMenu().add("Stop exam timer");
         menu.setOnMenuItemClickListener(item -> {
             String title = item.getTitle().toString();
+            if (title.startsWith("PaperNote AI")) {
+                openAiAssistant();
+                return true;
+            }
             if (title.startsWith("Study marks")) {
                 showStudyMarksMenu();
                 return true;
@@ -894,6 +930,10 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
                 } else {
                     toast("Replaying this session stroke-by-stroke");
                 }
+                return true;
+            }
+            if ("Import PDF pages".equals(title)) {
+                choosePdf();
                 return true;
             }
             if (title.startsWith("Quick-share")) {
@@ -1949,6 +1989,98 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
         startActivityForResult(intent, REQUEST_IMAGE);
     }
 
+    private void choosePdf() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.setType("application/pdf");
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        startActivityForResult(intent, REQUEST_PDF_IMPORT);
+    }
+
+    private void importPdfPages(Uri uri) {
+        if (currentNotebook == null) return;
+
+        final AlertDialog progress = new AlertDialog.Builder(this)
+                .setTitle("Importing PDF")
+                .setMessage("Preparing…")
+                .setNegativeButton("Cancel", null)
+                .create();
+        progress.setOnShowListener(d -> progress.getButton(AlertDialog.BUTTON_NEGATIVE).setEnabled(false));
+        progress.show();
+
+        final int startIndex = currentNotebook.pages.size();
+        final NotebookStore.NotebookMeta notebook = currentNotebook;
+
+        exportExecutor.submit(() -> {
+            int imported = 0;
+            try (ParcelFileDescriptor descriptor = getContentResolver().openFileDescriptor(uri, "r")) {
+                if (descriptor == null) throw new Exception("Could not open the PDF.");
+                android.graphics.pdf.PdfRenderer renderer = new android.graphics.pdf.PdfRenderer(descriptor);
+                try {
+                    int count = renderer.getPageCount();
+                    if (count == 0) throw new Exception("The PDF has no pages.");
+
+                    for (int i = 0; i < count; i++) {
+                        android.graphics.pdf.PdfRenderer.Page pdfPage = renderer.openPage(i);
+                        try {
+                            int targetWidth = Math.min(1400, pdfPage.getWidth());
+                            float ratio = targetWidth / (float) pdfPage.getWidth();
+                            int targetHeight = Math.max(1, Math.round(pdfPage.getHeight() * ratio));
+                            if (targetHeight > 1900) {
+                                ratio = 1900f / pdfPage.getHeight();
+                                targetWidth = Math.max(1, Math.round(pdfPage.getWidth() * ratio));
+                                targetHeight = 1900;
+                            }
+
+                            Bitmap bitmap = Bitmap.createBitmap(
+                                    targetWidth, targetHeight, Bitmap.Config.ARGB_8888);
+                            bitmap.eraseColor(Color.WHITE);
+                            pdfPage.render(
+                                    bitmap, null, null,
+                                    android.graphics.pdf.PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY);
+
+                            NotebookStore.PageMeta added = store.addPage(
+                                    notebook,
+                                    "PDF • Page " + (i + 1),
+                                    PaperCanvasView.PAPER_BLANK
+                            );
+                            store.savePageBitmap(added.id, bitmap);
+                            bitmap.recycle();
+                            imported++;
+
+                            final int done = imported;
+                            runOnUiThread(() -> progress.setMessage(
+                                    "Imported " + done + " of " + count + " pages…"));
+                        } finally {
+                            pdfPage.close();
+                        }
+                    }
+                    store.save(notebook);
+                } finally {
+                    renderer.close();
+                }
+
+                final int newPageIndex = Math.min(startIndex, notebook.pages.size() - 1);
+                final int importedCount = imported;
+                runOnUiThread(() -> {
+                    if (progress.isShowing()) progress.dismiss();
+                    currentNotebook = notebook;
+                    currentPageIndex = newPageIndex;
+                    buildEditor();
+                    toast(importedCount + " PDF page" + (importedCount == 1 ? "" : "s") + " imported");
+                });
+            } catch (Exception e) {
+                runOnUiThread(() -> {
+                    if (progress.isShowing()) progress.dismiss();
+                    new AlertDialog.Builder(EditorActivity.this)
+                            .setTitle("PDF import failed")
+                            .setMessage(e.getMessage() == null ? "The PDF could not be imported." : e.getMessage())
+                            .setPositiveButton("OK", null)
+                            .show();
+                });
+            }
+        });
+    }
+
     private void chooseRestoreFile() {
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         intent.setType("*/*");
@@ -2087,6 +2219,11 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
                     canvasView.addImage(decoded);
                     decoded.recycle();
                 }
+                return;
+            }
+
+            if (requestCode == REQUEST_PDF_IMPORT) {
+                importPdfPages(uri);
                 return;
             }
 

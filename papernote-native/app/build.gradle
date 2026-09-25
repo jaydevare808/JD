@@ -10,8 +10,8 @@ android {
         applicationId 'com.jd.papernote'
         minSdk 26
         targetSdk 36
-        versionCode 19
-        versionName '2.2.0'
+        versionCode 20
+        versionName '2.3.0'
     }
 
     compileOptions {
@@ -21,6 +21,10 @@ android {
 
     buildFeatures {
         buildConfig true
+    }
+
+    androidResources {
+        noCompress += ['gguf']
     }
 
     // Device-test release candidate. Production Google Play builds will use Play App Signing.
@@ -35,4 +39,58 @@ android {
 
 dependencies {
     implementation 'androidx.core:core:1.17.0'
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2'
+    implementation 'dev.ffmpegkit-maintained:llama-android:0.1.1'
 }
+
+def paperNoteAiModel = file("$projectDir/src/main/assets/PaperNote-AI.gguf")
+def paperNoteAiModelUrl = "https://huggingface.co/bartowski/SmolLM2-360M-Instruct-GGUF/resolve/main/SmolLM2-360M-Instruct-Q4_K_M.gguf"
+
+tasks.register("preparePaperNoteAiModel") {
+    outputs.file(paperNoteAiModel)
+    doLast {
+        if (paperNoteAiModel.exists() && paperNoteAiModel.length() >= 200_000_000L) {
+            return
+        }
+        paperNoteAiModel.parentFile.mkdirs()
+        logger.lifecycle("Downloading PaperNote offline AI model (~271 MB)...")
+        def connection = new URL(paperNoteAiModelUrl).openConnection()
+        connection.setInstanceFollowRedirects(true)
+        connection.setConnectTimeout(30_000)
+        connection.setReadTimeout(120_000)
+        connection.setRequestProperty("User-Agent", "PaperNote-Build")
+        connection.connect()
+        def expected = connection.contentLengthLong
+        def temp = new File(paperNoteAiModel.parentFile, paperNoteAiModel.name + ".part")
+        if (temp.exists()) temp.delete()
+        connection.getInputStream().withCloseable { input ->
+            temp.withOutputStream { output ->
+                byte[] buffer = new byte[1024 * 1024]
+                long downloadedBytes = 0L
+                int read
+                while ((read = input.read(buffer)) != -1) {
+                    output.write(buffer, 0, read)
+                    downloadedBytes += read
+                }
+                output.flush()
+                if (downloadedBytes < 200_000_000L) {
+                    throw new GradleException("PaperNote AI model download is unexpectedly small: " + downloadedBytes + " bytes")
+                }
+                if (expected > 0 && downloadedBytes != expected) {
+                    logger.warn("Model download size changed: expected " + expected + ", got " + downloadedBytes)
+                }
+            }
+        }
+        if (paperNoteAiModel.exists() && !paperNoteAiModel.delete()) {
+            throw new GradleException("Unable to replace the previous AI model")
+        }
+        if (!temp.renameTo(paperNoteAiModel)) {
+            throw new GradleException("Unable to install the downloaded AI model")
+        }
+    }
+}
+
+tasks.named("preBuild").configure {
+    dependsOn("preparePaperNoteAiModel")
+}
+
