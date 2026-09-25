@@ -719,7 +719,8 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
     private void showPaperDialog() {
         String[] items = {
                 "Blank", "Ruled", "Graph", "Dot Grid", "Math Practice",
-                "2-Mark Answer", "3-Mark Answer", "4-Mark Answer", "Science Experiment"
+                "2-Mark Answer", "3-Mark Answer", "4-Mark Answer", "Science Experiment",
+                "Cornell Notes", "Revision Sheet", "Flashcard Page", "Mind Map", "Daily Study Log"
         };
         String[] values = {
                 PaperCanvasView.PAPER_BLANK,
@@ -730,7 +731,12 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
                 PaperCanvasView.PAPER_EXAM_2,
                 PaperCanvasView.PAPER_EXAM_3,
                 PaperCanvasView.PAPER_EXAM_4,
-                PaperCanvasView.PAPER_EXPERIMENT
+                PaperCanvasView.PAPER_EXPERIMENT,
+                PaperCanvasView.PAPER_CORNELL,
+                PaperCanvasView.PAPER_REVISION,
+                PaperCanvasView.PAPER_FLASHCARD,
+                PaperCanvasView.PAPER_MINDMAP,
+                PaperCanvasView.PAPER_DAILY
         };
         int checked = 1;
         String current = currentNotebook.pages.get(currentPageIndex).paperType;
