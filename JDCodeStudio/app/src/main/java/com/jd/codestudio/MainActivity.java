@@ -31,6 +31,11 @@ import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.nio.file.Files;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
@@ -52,6 +57,7 @@ public class MainActivity extends Activity {
     private TextView fileNameView;
     private TextView languageView;
     private TextView statusView;
+    private EditText stdinEditor;
     private WebView preview;
     private Spinner languageSpinner;
 
@@ -219,11 +225,13 @@ public class MainActivity extends Activity {
         Button openButton = makeButton("Open");
         Button saveButton = makeButton("Save");
         Button runButton = makeButton("▶ Run");
+        Button settingsButton = makeButton("⚙");
 
         toolbar.addView(newButton, new LinearLayout.LayoutParams(0, dp(44), 1));
         toolbar.addView(openButton, new LinearLayout.LayoutParams(0, dp(44), 1));
         toolbar.addView(saveButton, new LinearLayout.LayoutParams(0, dp(44), 1));
         toolbar.addView(runButton, new LinearLayout.LayoutParams(0, dp(44), 1));
+        toolbar.addView(settingsButton, new LinearLayout.LayoutParams(dp(52), dp(44)));
 
         root.addView(toolbar);
 
@@ -270,7 +278,27 @@ public class MainActivity extends Activity {
         editor.setOverScrollMode(View.OVER_SCROLL_ALWAYS);
         editorRow.addView(editor, new LinearLayout.LayoutParams(0, -1, 1));
 
-        root.addView(editorRow, new LinearLayout.LayoutParams(-1, 0, 1));
+        root.addView(editorRow, new LinearLayout.LayoutParams(-1, 0, 0.92f));
+
+        LinearLayout inputPanel = new LinearLayout(this);
+        inputPanel.setOrientation(LinearLayout.VERTICAL);
+        inputPanel.setBackgroundColor(Color.rgb(16, 22, 30));
+        TextView inputHeader = makeText("STDIN / INPUT (optional)", 10, Color.rgb(141, 154, 175));
+        inputHeader.setTypeface(Typeface.DEFAULT_BOLD);
+        inputHeader.setPadding(dp(10), 0, 0, 0);
+        inputPanel.addView(inputHeader, new LinearLayout.LayoutParams(-1, dp(28)));
+        stdinEditor = new EditText(this);
+        stdinEditor.setSingleLine(false);
+        stdinEditor.setGravity(Gravity.TOP | Gravity.START);
+        stdinEditor.setTextColor(Color.rgb(234, 240, 246));
+        stdinEditor.setHintTextColor(Color.rgb(82, 98, 120));
+        stdinEditor.setHint("Enter program input here (one value per line)…");
+        stdinEditor.setTextSize(12);
+        stdinEditor.setTypeface(Typeface.MONOSPACE);
+        stdinEditor.setPadding(dp(10), dp(4), dp(10), dp(6));
+        stdinEditor.setBackgroundColor(Color.rgb(16, 22, 30));
+        inputPanel.addView(stdinEditor, new LinearLayout.LayoutParams(-1, dp(64)));
+        root.addView(inputPanel, new LinearLayout.LayoutParams(-1, dp(96)));
 
         outputPanel = new LinearLayout(this);
         outputPanel.setOrientation(LinearLayout.VERTICAL);
@@ -341,6 +369,7 @@ public class MainActivity extends Activity {
         openButton.setOnClickListener(v -> openFile());
         saveButton.setOnClickListener(v -> saveFile());
         runButton.setOnClickListener(v -> runCurrent());
+        settingsButton.setOnClickListener(v -> showExecutionSettings());
     }
 
     private void updateLineNumbers() {
@@ -502,6 +531,200 @@ public class MainActivity extends Activity {
     }
 
     private void runCurrent() {
+        saveFile();
+
+        String language = (String) languageSpinner.getSelectedItem();
+        String code = editor.getText().toString();
+
+        hidePreview();
+        output.setText("");
+        statusView.setText("RUNNING");
+
+        switch (language) {
+            case "HTML":
+                runHtml(code);
+                break;
+            case "CSS":
+                runCss(code);
+                break;
+            case "SQL":
+                runSql(code);
+                break;
+            case "JavaScript":
+            case "PHP":
+            case "Python":
+            case "C":
+            case "C++":
+            case "Java":
+            case "Bash":
+                runThroughOneCompiler(language, code, stdinEditor.getText().toString());
+                break;
+            default:
+                runtimeNotice(language);
+                break;
+        }
+    }
+
+    private String oneCompilerLanguage(String language) {
+        switch (language) {
+            case "PHP": return "php";
+            case "Python": return "python";
+            case "JavaScript": return "javascript";
+            case "C": return "c";
+            case "C++": return "cpp";
+            case "Java": return "java";
+            case "Bash": return "bash";
+            default: return language.toLowerCase(Locale.US);
+        }
+    }
+
+    private String oneCompilerFileName(String language) {
+        return "main." + extension(language);
+    }
+
+    private String getOneCompilerKey() {
+        return getSharedPreferences("execution", MODE_PRIVATE).getString("onecompiler_key", "");
+    }
+
+    private void showExecutionSettings() {
+        final EditText key = new EditText(this);
+        key.setSingleLine(true);
+        key.setInputType(0x81);
+        key.setHint("OneCompiler API key");
+        key.setText(getOneCompilerKey());
+
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(8), dp(4), dp(8), 0);
+        box.addView(key, new LinearLayout.LayoutParams(-1, dp(52)));
+
+        TextView info = makeText(
+                "Real PHP/Python/C/C++/Java/JavaScript/Bash execution uses OneCompiler's secure execution API. " +
+                "Get an API key from OneCompiler, paste it here, and it is stored only on this device.",
+                12, Color.rgb(141, 154, 175));
+        info.setPadding(dp(8), dp(4), dp(8), dp(4));
+        box.addView(info, new LinearLayout.LayoutParams(-1, dp(90)));
+
+        new AlertDialog.Builder(this)
+                .setTitle("Code Execution")
+                .setView(box)
+                .setPositiveButton("Save", (dialog, which) -> {
+                    getSharedPreferences("execution", MODE_PRIVATE)
+                            .edit()
+                            .putString("onecompiler_key", key.getText().toString().trim())
+                            .apply();
+                    statusView.setText(key.getText().length() > 0 ? "API READY" : "READY");
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void runThroughOneCompiler(String language, String code, String stdin) {
+        String apiKey = getOneCompilerKey();
+        if (apiKey.isEmpty()) {
+            statusView.setText("API KEY NEEDED");
+            output.setText(
+                    "Real " + language + " execution is enabled through OneCompiler.\n\n" +
+                    "Tap ⚙ → enter your OneCompiler API key → Save → Run."
+            );
+            showExecutionSettings();
+            return;
+        }
+
+        final String apiLanguage = oneCompilerLanguage(language);
+        final String fileName = oneCompilerFileName(language);
+
+        new Thread(() -> {
+            HttpURLConnection connection = null;
+            try {
+                URL url = new URL("https://api.onecompiler.org/v1/run");
+                connection = (HttpURLConnection) url.openConnection();
+                connection.setRequestMethod("POST");
+                connection.setConnectTimeout(15000);
+                connection.setReadTimeout(30000);
+                connection.setDoOutput(true);
+                connection.setRequestProperty("Content-Type", "application/json");
+                connection.setRequestProperty("X-API-Key", apiKey);
+
+                org.json.JSONObject request = new org.json.JSONObject();
+                request.put("language", apiLanguage);
+                request.put("stdin", stdin == null ? "" : stdin);
+
+                org.json.JSONArray files = new org.json.JSONArray();
+                org.json.JSONObject source = new org.json.JSONObject();
+                source.put("name", fileName);
+                source.put("content", code);
+                files.put(source);
+                request.put("files", files);
+
+                byte[] body = request.toString().getBytes(StandardCharsets.UTF_8);
+                try (OutputStream stream = connection.getOutputStream()) {
+                    stream.write(body);
+                }
+
+                int responseCode = connection.getResponseCode();
+                InputStreamReader reader = new InputStreamReader(
+                        responseCode >= 200 && responseCode < 400
+                                ? connection.getInputStream()
+                                : connection.getErrorStream(),
+                        StandardCharsets.UTF_8);
+                BufferedReader buffered = new BufferedReader(reader);
+                StringBuilder response = new StringBuilder();
+                String line;
+                while ((line = buffered.readLine()) != null) {
+                    response.append(line);
+                }
+
+                org.json.JSONObject result = new org.json.JSONObject(response.toString());
+                StringBuilder shown = new StringBuilder();
+                shown.append("Language: ").append(language).append("\n");
+                shown.append("Status: ").append(result.optString("status", "unknown")).append("\n");
+
+                String exception = result.optString("exception", "");
+                String stderr = result.optString("stderr", "");
+                String stdout = result.optString("stdout", "");
+
+                if (!stdout.isEmpty()) {
+                    shown.append("\nOUTPUT\n").append(stdout);
+                }
+                if (!stderr.isEmpty()) {
+                    shown.append("\n\nERROR\n").append(stderr);
+                }
+                if (!exception.isEmpty()) {
+                    shown.append("\n\nEXCEPTION\n").append(exception);
+                }
+
+                if (result.has("compilationTime")) {
+                    shown.append("\n\nCompile: ").append(result.optInt("compilationTime")).append(" ms");
+                }
+                if (result.has("executionTime")) {
+                    shown.append("\nRun: ").append(result.optInt("executionTime")).append(" ms");
+                }
+                if (result.has("memoryUsed")) {
+                    shown.append("\nMemory: ").append(result.optInt("memoryUsed")).append(" KB");
+                }
+                if (result.has("error")) {
+                    shown.append("\n\nAPI ERROR\n").append(result.optString("error"));
+                }
+
+                final String text = shown.toString();
+                runOnUiThread(() -> {
+                    output.setText(text);
+                    statusView.setText(responseCode >= 200 && responseCode < 300 ? "DONE" : "API ERROR");
+                });
+            } catch (Exception e) {
+                runOnUiThread(() -> {
+                    output.setText("Execution connection error:\n" + e.getMessage());
+                    statusView.setText("NETWORK ERROR");
+                });
+            } finally {
+                if (connection != null) {
+                    connection.disconnect();
+                }
+            }
+        }).start();
+    }
+
         saveFile();
 
         String language = (String) languageSpinner.getSelectedItem();
