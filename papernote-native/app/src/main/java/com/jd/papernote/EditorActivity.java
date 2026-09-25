@@ -49,7 +49,6 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
     private static final int EXPORT_BACKUP = 3;
 
     private NotebookStore store;
-    private SoundEngine soundEngine;
     private ExecutorService saveExecutor;
     private ExecutorService exportExecutor;
     private final Handler saveHandler = new Handler(Looper.getMainLooper());
@@ -63,7 +62,6 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
     private TextView titleLabel;
     private Button writeModeButton;
     private Button palmButton;
-    private Button soundButton;
     private int pendingExport = 0;
     private ExportManager.Format pendingExportFormat;
     private static final int REQUEST_STORAGE_PERMISSION = 505;
@@ -73,7 +71,6 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
         super.onCreate(savedInstanceState);
 
         store = new NotebookStore(this);
-        soundEngine = new SoundEngine(this);
         saveExecutor = Executors.newSingleThreadExecutor();
         exportExecutor = Executors.newSingleThreadExecutor();
 
@@ -104,7 +101,6 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
         saveCurrentPageNow();
         if (saveExecutor != null) saveExecutor.shutdown();
         if (exportExecutor != null) exportExecutor.shutdown();
-        if (soundEngine != null) soundEngine.close();
         super.onDestroy();
     }
 
@@ -323,7 +319,7 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
         header.addView(more, new LinearLayout.LayoutParams(dp(48), dp(44)));
         root.addView(header);
 
-        TextView pageHint = text("WRITE MODE  •  Use the controls below for pen, marker, eraser and study tools.", 11, 0xFF5C6678, true);
+        TextView pageHint = text("WRITE MODE  •  Pen, marker, eraser, shapes, text and images.", 11, 0xFF5C6678, true);
         pageHint.setPadding(dp(14), dp(7), dp(14), dp(5));
         root.addView(pageHint);
 
@@ -379,9 +375,6 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
         redo.setOnClickListener(v -> canvasView.redo());
         tools.addView(redo);
 
-        Button study = toolbarButton("STUDY");
-        study.setOnClickListener(v -> showStudyTools(study));
-        tools.addView(study);
 
         toolScroll.addView(tools);
         root.addView(toolScroll);
@@ -435,13 +428,6 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
         });
         quickBar.addView(palmButton);
 
-        soundButton = toolbarButton("SOUND");
-        soundButton.setOnClickListener(v -> {
-            boolean enabled = !soundEngine.isEnabled();
-            soundEngine.setEnabled(enabled);
-            updateSoundButton();
-        });
-        quickBar.addView(soundButton);
 
         root.addView(quickBar);
 
@@ -449,7 +435,6 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
         canvasFrame.setPadding(dp(8), dp(7), dp(8), dp(7));
         canvasView = new PaperCanvasView(this);
         canvasView.setListener(this);
-        canvasView.setSoundEngine(soundEngine);
         canvasFrame.addView(canvasView, new FrameLayout.LayoutParams(-1, -1));
         root.addView(canvasFrame, new LinearLayout.LayoutParams(-1, 0, 1f));
 
@@ -498,7 +483,6 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
         loadCurrentPage();
         updateWriteModeButton();
         updatePalmButton();
-        updateSoundButton();
 
         // Subtle editor entrance: content arrives without covering the canvas with a modal animation.
         header.setAlpha(0f);
@@ -970,6 +954,9 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
         menu.getMenu().add("Clear current page");
         menu.getMenu().add("Backup notebook");
         menu.getMenu().add("Restore backup");
+        menu.getMenu().add("Scientific calculator");
+        menu.getMenu().add("Focus timer");
+        menu.getMenu().add("Page checklist");
         menu.getMenu().add("About passive stylus");
         menu.getMenu().add("Delete notebook");
         menu.setOnMenuItemClickListener(item -> {
@@ -1000,6 +987,15 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
                     return true;
                 case "Restore backup":
                     chooseRestoreFile();
+                    return true;
+                case "Scientific calculator":
+                    showCalculator();
+                    return true;
+                case "Focus timer":
+                    showFocusTimer();
+                    return true;
+                case "Page checklist":
+                    showStudyChecklist();
                     return true;
                 case "About passive stylus":
                     new AlertDialog.Builder(this)
