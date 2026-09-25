@@ -515,7 +515,6 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
         loadCurrentPage();
         updateWriteModeButton();
         updatePalmButton();
-        updateSoundButton();
     }
 
     private void loadCurrentPage() {
