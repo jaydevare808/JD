@@ -169,7 +169,10 @@ public final class NoteCanvasView extends View {
     public void clearUndoHistory() {
         undo.clear();
         redo.clear();
-        replaceBaseBitmapWithCurrent();
+        if (baseBitmap != null && !baseBitmap.isRecycled()) {
+            baseBitmap.recycle();
+        }
+        baseBitmap = null;
     }
 
     public void clearPage() {
@@ -231,21 +234,6 @@ public final class NoteCanvasView extends View {
         if (old != null && !old.isRecycled() && old != baseBitmap) {
             old.recycle();
         }
-    }
-
-    private void replaceBaseBitmapWithCurrent() {
-        if (inkBitmap == null || inkBitmap.isRecycled()) return;
-        Bitmap replacement;
-        try {
-            replacement = inkBitmap.copy(Bitmap.Config.ARGB_8888, true);
-        } catch (OutOfMemoryError error) {
-            return;
-        }
-
-        if (baseBitmap != null && !baseBitmap.isRecycled()) {
-            baseBitmap.recycle();
-        }
-        baseBitmap = replacement;
     }
 
     private void dirty() {
