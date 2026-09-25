@@ -10,6 +10,7 @@ import android.graphics.PointF;
 import android.graphics.PorterDuff;
 import android.graphics.PorterDuffXfermode;
 import android.graphics.RectF;
+import android.os.Build;
 import android.os.SystemClock;
 import android.view.MotionEvent;
 import android.view.View;
@@ -32,7 +33,16 @@ public final class NoteCanvasView extends View {
 
     private static final int MAX_UNDO_COMMANDS = 16;
     private static final int MAX_POINTS_PER_STROKE = 2048;
-    private static final float MIN_POINT_DISTANCE = 0.9f;
+    private static final float MIN_POINT_DISTANCE = 0.70f;
+
+    /**
+     * Strict palm-rejection mode:
+     * - only stylus/eraser tool types may write
+     * - finger/mouse touches are ignored
+     * - a finger/palm pointer can coexist with an active stylus pointer
+     *   without interrupting the stylus stroke
+     */
+    private static final boolean STRICT_STYLUS_INPUT = true;
 
     public interface Listener {
         void onCanvasDirty();
@@ -61,7 +71,6 @@ public final class NoteCanvasView extends View {
     private String paperType = PAPER_RULED;
 
     private boolean drawing;
-    private boolean ignoredTouch;
     private int activePointerId = -1;
     private float lastX;
     private float lastY;
@@ -75,7 +84,7 @@ public final class NoteCanvasView extends View {
         super(context);
         setFocusable(true);
         setClickable(true);
-        setBackgroundColor(0xFFE4E7EC);
+        setBackgroundColor(0xFFE3E6EC);
 
         strokePaint.setStyle(Paint.Style.STROKE);
         strokePaint.setStrokeCap(Paint.Cap.ROUND);
@@ -88,11 +97,10 @@ public final class NoteCanvasView extends View {
         eraserPaint.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.CLEAR));
 
         gridPaint.setStrokeWidth(1f);
-        marginPaint.setColor(0xFFE4A1AE);
+        marginPaint.setColor(0xFFE1A4AE);
         marginPaint.setStrokeWidth(2f);
 
         borderPaint.setStyle(Paint.Style.STROKE);
-        borderPaint.setStrokeWidth(dp(1f));
         borderPaint.setColor(0x22000000);
 
         setLayerType(View.LAYER_TYPE_HARDWARE, null);
@@ -102,8 +110,16 @@ public final class NoteCanvasView extends View {
         this.listener = listener;
     }
 
+    public boolean isStrictStylusInput() {
+        return STRICT_STYLUS_INPUT;
+    }
+
     public int getTool() {
         return tool;
+    }
+
+    public float getPenSize() {
+        return penSize;
     }
 
     public void setTool(int value) {
@@ -115,6 +131,7 @@ public final class NoteCanvasView extends View {
 
     public void setInkColor(int color) {
         inkColor = color;
+        invalidate();
     }
 
     public void setPenSize(float value) {
@@ -143,6 +160,7 @@ public final class NoteCanvasView extends View {
             inkCanvas = new Canvas(inkBitmap);
         }
 
+        resetTouchState();
         invalidate();
     }
 
@@ -186,6 +204,7 @@ public final class NoteCanvasView extends View {
         redo.addLast(undo.removeLast());
         rebuild();
         dirty();
+        invalidate();
     }
 
     public void redo() {
@@ -208,6 +227,7 @@ public final class NoteCanvasView extends View {
         }
         undo.addLast(command);
         redo.clear();
+
         apply(command, inkCanvas);
         dirty();
         invalidate();
@@ -241,12 +261,13 @@ public final class NoteCanvasView extends View {
     }
 
     private void releaseBitmaps() {
-        livePoints.clear();
-        livePath.reset();
+        resetTouchState();
         undo.clear();
         redo.clear();
 
-        if (inkBitmap != null && !inkBitmap.isRecycled()) inkBitmap.recycle();
+        if (inkBitmap != null && !inkBitmap.isRecycled()) {
+            inkBitmap.recycle();
+        }
         if (baseBitmap != null && !baseBitmap.isRecycled() && baseBitmap != inkBitmap) {
             baseBitmap.recycle();
         }
@@ -263,13 +284,14 @@ public final class NoteCanvasView extends View {
         float sy = Math.max(1f, height - dp(20f)) / PAGE_HEIGHT;
         baseScale = Math.min(sx, sy);
         updatePageRect();
+        borderPaint.setStrokeWidth(Math.max(1f, dp(1f)));
     }
 
     @Override
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
         updatePageRect();
-        canvas.drawColor(0xFFE4E7EC);
+        canvas.drawColor(0xFFE3E6EC);
 
         canvas.save();
         canvas.clipRect(pageRect);
@@ -284,7 +306,7 @@ public final class NoteCanvasView extends View {
 
         if (drawing && tool != TOOL_ERASER) {
             strokePaint.setColor(inkColor);
-            strokePaint.setAlpha(tool == TOOL_HIGHLIGHTER ? 80 : 255);
+            strokePaint.setAlpha(tool == TOOL_HIGHLIGHTER ? 78 : 255);
             strokePaint.setStrokeWidth(tool == TOOL_HIGHLIGHTER ? penSize * 2.8f : penSize);
             strokePaint.setStrokeCap(
                     tool == TOOL_HIGHLIGHTER ? Paint.Cap.SQUARE : Paint.Cap.ROUND
@@ -308,14 +330,14 @@ public final class NoteCanvasView extends View {
             }
             canvas.drawLine(84, 0, 84, PAGE_HEIGHT, marginPaint);
         } else if (PAPER_GRAPH.equals(paperType)) {
-            gridPaint.setColor(0xFFE0E4EA);
+            gridPaint.setColor(0xFFE1E5EA);
             for (int x = 0; x <= PAGE_WIDTH; x += 32) {
                 canvas.drawLine(x, 0, x, PAGE_HEIGHT, gridPaint);
             }
             for (int y = 0; y <= PAGE_HEIGHT; y += 32) {
                 canvas.drawLine(0, y, PAGE_WIDTH, y, gridPaint);
             }
-            gridPaint.setColor(0xFFC9CFD8);
+            gridPaint.setColor(0xFFC8CED8);
             for (int x = 0; x <= PAGE_WIDTH; x += 160) {
                 canvas.drawLine(x, 0, x, PAGE_HEIGHT, gridPaint);
             }
@@ -328,24 +350,54 @@ public final class NoteCanvasView extends View {
     @Override
     public boolean onTouchEvent(MotionEvent event) {
         switch (event.getActionMasked()) {
-            case MotionEvent.ACTION_DOWN:
-                ignoredTouch = event.getPointerCount() != 1 || !isInsidePage(event.getX(), event.getY());
-                if (ignoredTouch) return true;
+            case MotionEvent.ACTION_DOWN: {
+                int pointerIndex = 0;
+                int pointerId = event.getPointerId(pointerIndex);
+                if (!canWritePointer(event, pointerIndex)) {
+                    // Deliberately consume the finger/palm contact so it cannot
+                    // leak into a stylus gesture as an unwanted drawing action.
+                    return true;
+                }
 
-                activePointerId = event.getPointerId(0);
+                requestUnbufferedDispatch(event);
+                if (!isInsidePage(event.getX(pointerIndex), event.getY(pointerIndex))) {
+                    return true;
+                }
+
+                activePointerId = pointerId;
                 drawing = true;
-                toPage(event.getX(0), event.getY(0), pagePoint);
+                toPage(event.getX(pointerIndex), event.getY(pointerIndex), pagePoint);
                 beginStroke(pagePoint[0], pagePoint[1]);
                 return true;
+            }
 
-            case MotionEvent.ACTION_POINTER_DOWN:
+            case MotionEvent.ACTION_POINTER_DOWN: {
+                int pointerIndex = event.getActionIndex();
+
+                // When a palm/finger lands while the stylus is already writing,
+                // ignore the new pointer completely. Do not cancel the stylus.
+                if (canWritePointer(event, pointerIndex)) {
+                    if (activePointerId < 0 && isInsidePage(
+                            event.getX(pointerIndex), event.getY(pointerIndex))) {
+                        requestUnbufferedDispatch(event);
+                        activePointerId = event.getPointerId(pointerIndex);
+                        drawing = true;
+                        toPage(
+                                event.getX(pointerIndex),
+                                event.getY(pointerIndex),
+                                pagePoint
+                        );
+                        beginStroke(pagePoint[0], pagePoint[1]);
+                    }
+                }
                 return true;
+            }
 
-            case MotionEvent.ACTION_MOVE:
-                if (ignoredTouch || activePointerId < 0 || inkBitmap == null) return true;
+            case MotionEvent.ACTION_MOVE: {
+                if (!drawing || activePointerId < 0 || inkBitmap == null) return true;
 
                 int index = event.findPointerIndex(activePointerId);
-                if (index < 0) return true;
+                if (index < 0 || !canWritePointer(event, index)) return true;
 
                 for (int h = 0; h < event.getHistorySize(); h++) {
                     toPage(
@@ -359,39 +411,77 @@ public final class NoteCanvasView extends View {
                 toPage(event.getX(index), event.getY(index), pagePoint);
                 appendPoint(pagePoint[0], pagePoint[1]);
 
-                if (SystemClock.uptimeMillis() - lastFrame >= 8L) {
+                if (SystemClock.uptimeMillis() - lastFrame >= 6L) {
                     postInvalidateOnAnimation();
                 }
                 return true;
+            }
 
-            case MotionEvent.ACTION_POINTER_UP:
-                if (!ignoredTouch && activePointerId == event.getPointerId(event.getActionIndex())) {
-                    commitLiveStroke();
+            case MotionEvent.ACTION_POINTER_UP: {
+                int pointerIndex = event.getActionIndex();
+                int pointerId = event.getPointerId(pointerIndex);
+
+                if (pointerId == activePointerId) {
+                    if (isCanceled(event)) {
+                        // Preserve already-captured stylus points on cancellation.
+                        commitLiveStroke();
+                    } else {
+                        int index = event.findPointerIndex(activePointerId);
+                        if (index >= 0 && canWritePointer(event, index)) {
+                            toPage(
+                                    event.getX(index),
+                                    event.getY(index),
+                                    pagePoint
+                            );
+                            appendPoint(pagePoint[0], pagePoint[1]);
+                        }
+                        commitLiveStroke();
+                    }
                 }
+                // A canceled finger/palm pointer never touches the active stroke.
                 return true;
+            }
 
-            case MotionEvent.ACTION_UP:
-                if (ignoredTouch) {
-                    resetTouchState();
-                    return true;
-                }
+            case MotionEvent.ACTION_UP: {
+                if (activePointerId < 0) return true;
 
-                int upIndex = event.findPointerIndex(activePointerId);
-                if (upIndex >= 0) {
-                    toPage(event.getX(upIndex), event.getY(upIndex), pagePoint);
+                int index = event.findPointerIndex(activePointerId);
+                if (index >= 0 && canWritePointer(event, index)) {
+                    toPage(event.getX(index), event.getY(index), pagePoint);
                     appendPoint(pagePoint[0], pagePoint[1]);
                 }
+
                 commitLiveStroke();
                 return true;
+            }
 
             case MotionEvent.ACTION_CANCEL:
             case MotionEvent.ACTION_OUTSIDE:
-                cancelLiveStroke(true);
+                // Do not throw away a legitimate stylus stroke merely because
+                // the system cancels this motion sequence.
+                commitLiveStroke();
                 return true;
 
             default:
                 return true;
         }
+    }
+
+    private boolean canWritePointer(MotionEvent event, int pointerIndex) {
+        int toolType = event.getToolType(pointerIndex);
+
+        if (STRICT_STYLUS_INPUT) {
+            return toolType == MotionEvent.TOOL_TYPE_STYLUS
+                    || toolType == MotionEvent.TOOL_TYPE_ERASER;
+        }
+
+        return toolType != MotionEvent.TOOL_TYPE_FINGER
+                && toolType != MotionEvent.TOOL_TYPE_MOUSE;
+    }
+
+    private boolean isCanceled(MotionEvent event) {
+        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                && (event.getFlags() & MotionEvent.FLAG_CANCELED) != 0;
     }
 
     private boolean isInsidePage(float x, float y) {
@@ -402,8 +492,10 @@ public final class NoteCanvasView extends View {
     private void beginStroke(float x, float y) {
         livePoints.clear();
         livePath.reset();
+
         livePoints.add(new PointF(x, y));
         livePath.moveTo(x, y);
+
         lastX = x;
         lastY = y;
     }
@@ -414,8 +506,8 @@ public final class NoteCanvasView extends View {
 
         if (Math.hypot(dx, dy) < MIN_POINT_DISTANCE) return;
 
-        float smoothedX = lastX + dx * 0.90f;
-        float smoothedY = lastY + dy * 0.90f;
+        float smoothedX = lastX + dx * 0.92f;
+        float smoothedY = lastY + dy * 0.92f;
 
         if (livePoints.size() >= MAX_POINTS_PER_STROKE) {
             PointF last = livePoints.get(livePoints.size() - 1);
@@ -465,7 +557,13 @@ public final class NoteCanvasView extends View {
             dirty();
             invalidate();
         } else {
-            execute(new StrokeCommand(points, inkColor, penSize, tool, false));
+            execute(new StrokeCommand(
+                    points,
+                    inkColor,
+                    penSize,
+                    tool,
+                    false
+            ));
         }
 
         resetTouchState();
@@ -484,7 +582,6 @@ public final class NoteCanvasView extends View {
         livePath.reset();
         drawing = false;
         activePointerId = -1;
-        ignoredTouch = false;
     }
 
     private void toPage(float screenX, float screenY, float[] out) {
@@ -518,18 +615,20 @@ public final class NoteCanvasView extends View {
             paint.setStrokeWidth(Math.max(12f, command.width * 3f));
         } else {
             paint.setColor(command.color);
-            paint.setAlpha(command.tool == TOOL_HIGHLIGHTER ? 80 : 255);
+            paint.setAlpha(command.tool == TOOL_HIGHLIGHTER ? 78 : 255);
             paint.setStrokeWidth(
                     command.tool == TOOL_HIGHLIGHTER
                             ? command.width * 2.8f
                             : command.width
             );
+
             if (command.tool == TOOL_HIGHLIGHTER) {
                 paint.setStrokeCap(Paint.Cap.SQUARE);
             }
         }
 
         Path path = new Path();
+
         if (command.points.size() == 1) {
             PointF point = command.points.get(0);
             paint.setStyle(Paint.Style.FILL);
@@ -546,6 +645,7 @@ public final class NoteCanvasView extends View {
             PointF previous = first;
             for (int i = 1; i < command.points.size(); i++) {
                 PointF current = command.points.get(i);
+
                 if (i == command.points.size() - 1) {
                     path.quadTo(previous.x, previous.y, current.x, current.y);
                 } else {
@@ -554,8 +654,10 @@ public final class NoteCanvasView extends View {
                     float midY = (current.y + next.y) * 0.5f;
                     path.quadTo(current.x, current.y, midX, midY);
                 }
+
                 previous = current;
             }
+
             canvas.drawPath(path, paint);
         }
 
@@ -563,7 +665,9 @@ public final class NoteCanvasView extends View {
     }
 
     private static String normalizePaper(String value) {
-        if (PAPER_BLANK.equals(value) || PAPER_RULED.equals(value) || PAPER_GRAPH.equals(value)) {
+        if (PAPER_BLANK.equals(value)
+                || PAPER_RULED.equals(value)
+                || PAPER_GRAPH.equals(value)) {
             return value;
         }
         return PAPER_RULED;
@@ -584,7 +688,13 @@ public final class NoteCanvasView extends View {
         final int tool;
         final boolean clear;
 
-        StrokeCommand(ArrayList<PointF> points, int color, float width, int tool, boolean clear) {
+        StrokeCommand(
+                ArrayList<PointF> points,
+                int color,
+                float width,
+                int tool,
+                boolean clear
+        ) {
             this.points = points;
             this.color = color;
             this.width = width;

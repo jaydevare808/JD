@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">StudyNote</string>
+    <string name="welcome_title">Welcome to StudyNote</string>
+    <string name="welcome_start">Start writing</string>
 </resources>

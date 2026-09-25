@@ -5,12 +5,6 @@ on:
     paths:
       - "education-app/**"
       - ".github/workflows/studynote-android.yml"
-  pull_request:
-    branches:
-      - main
-    paths:
-      - "education-app/**"
-      - ".github/workflows/studynote-android.yml"
   workflow_dispatch:
 
 permissions:
@@ -49,7 +43,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: StudyNote-1.1.0-debug-apk
+          name: StudyNote-1.2.0-debug-apk
           path: education-app/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
@@ -57,7 +51,7 @@ jobs:
       - name: Upload lint report
         uses: actions/upload-artifact@v4
         with:
-          name: StudyNote-1.1.0-lint
+          name: StudyNote-1.2.0-lint
           path: education-app/app/build/reports/lint-results-debug.html
           if-no-files-found: warn
           retention-days: 14
