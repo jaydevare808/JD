@@ -26,3 +26,6 @@ v1.2: real execution backend integration with OneCompiler API and stdin support.
 
 
 v1.2 build correction: safe JavaScript quoting.
+
+
+v1.2 compiler cleanup: removed stale duplicate run block.
