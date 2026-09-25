@@ -1,5 +1,6 @@
 package com.jd.studynote;
 
+import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Intent;
@@ -7,6 +8,7 @@ import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -93,6 +95,22 @@ public final class MainActivity extends Activity implements NoteCanvasView.Liste
         }
 
         showHome();
+
+        if (Build.VERSION.SDK_INT >= 33) {
+            getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+                    android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT,
+                    this::handleBack
+            );
+        }
+    }
+
+    private void handleBack() {
+        if (inEditor) {
+            checkpointSave();
+            exitEditor();
+        } else {
+            finish();
+        }
     }
 
     @Override
@@ -131,14 +149,10 @@ public final class MainActivity extends Activity implements NoteCanvasView.Liste
         super.onDestroy();
     }
 
+    @SuppressLint("GestureBackNavigation")
     @Override
     public void onBackPressed() {
-        if (inEditor) {
-            checkpointSave();
-            exitEditor();
-            return;
-        }
-        super.onBackPressed();
+        handleBack();
     }
 
     private void showHome() {
