@@ -120,9 +120,9 @@ public final class AiAssistantActivity extends Activity {
 
         LinearLayout modelCard = card();
         modelCard.addView(text("PAPERNOTE AI LITE", 11, 0xFF667085, true));
-        modelCard.addView(text("SmolLM2 360M Instruct • Q4_K_M", 16, 0xFF182339, true));
+        modelCard.addView(text("SmolLM2 135M Instruct • Q4_K_M", 16, 0xFF182339, true));
         modelCard.addView(text(
-                "Bundled for offline use. The model is roughly 271 MB before the rest of the app. " +
+                "Bundled for offline use. The model is roughly 105 MB before the rest of the app. " +
                         "No API key, subscription, or cloud request is required. Answers can be wrong, so verify important academic work.",
                 12, 0xFF5B6473, false));
         body.addView(modelCard, bottomMargin(dp(10)));
