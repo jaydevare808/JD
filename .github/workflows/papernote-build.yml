@@ -42,7 +42,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: papernote-native/app/src/main/assets/PaperNote-AI.gguf
-          key: papernote-ai-smollm2-360m-q4km-v1
+          key: papernote-ai-smollm2-135m-q4km-v1
 
       - name: Build signed release and lint
         working-directory: papernote-native
