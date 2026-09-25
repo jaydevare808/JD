@@ -6,7 +6,7 @@ import java.security.MessageDigest
 
 def aiModelName = "SmolLM2-135M-Instruct.Q4_K_M.gguf"
 def aiModelUrl = "https://huggingface.co/QuantFactory/SmolLM2-135M-Instruct-GGUF/resolve/main/SmolLM2-135M-Instruct.Q4_K_M.gguf?download=true"
-def aiModelSha256 = "8030f04528538d47bda434f6f0bdf3952c40a58123e4d5e755332f23731a868"
+def aiModelSha256 = "8030f04528538d47bda434f6f0bdf3952c40a58123e4d5e755332f23731a8684"
 def aiAssetsDir = file("$projectDir/src/main/assets")
 def aiModelFile = file("$aiAssetsDir/$aiModelName")
 
