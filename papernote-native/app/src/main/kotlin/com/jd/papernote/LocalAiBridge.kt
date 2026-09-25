@@ -3,6 +3,7 @@ package com.jd.papernote
 import android.content.Context
 import dev.ffmpegkit.llama.Llama
 import dev.ffmpegkit.llama.LlamaConfig
+import dev.ffmpegkit.llama.LlamaModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -17,8 +18,9 @@ object LocalAiBridge {
         fun onError(message: String)
     }
 
+    private val lock = Any()
     private var activeJob: Job? = null
-    private var activeModel: Any? = null
+    private var activeModel: LlamaModel? = null
 
     @JvmStatic
     fun isSupported(): Boolean {
@@ -49,14 +51,18 @@ object LocalAiBridge {
                     throw IllegalStateException("Offline AI model is missing or incomplete.")
                 }
 
-                val model = Llama.loadModel(
-                    modelPath = modelFile.absolutePath,
-                    config = LlamaConfig(
-                        contextSize = 2048,
-                        threads = maxOf(2, minOf(Runtime.getRuntime().availableProcessors(), 6))
-                    )
-                )
-                activeModel = model
+                val model = synchronized(lock) {
+                    activeModel ?: Llama.loadModel(
+                        modelPath = modelFile.absolutePath,
+                        config = LlamaConfig(
+                            contextSize = 2048,
+                            threads = maxOf(2, minOf(Runtime.getRuntime().availableProcessors(), 6)),
+                            temperature = 0.35f,
+                            topP = 0.9f,
+                            topK = 40
+                        )
+                    ).also { activeModel = it }
+                }
                 withContext(Dispatchers.Main) { callback.onReady() }
 
                 val result = Llama.complete(
@@ -72,14 +78,8 @@ object LocalAiBridge {
                 val message = t.message?.takeIf { it.isNotBlank() } ?: "AI request failed."
                 withContext(Dispatchers.Main) { callback.onError(message) }
             } finally {
-                val model = activeModel
-                activeModel = null
-                if (model != null) {
-                    try {
-                        @Suppress("UNCHECKED_CAST")
-                        Llama.releaseModel(model as dev.ffmpegkit.llama.LlamaModel)
-                    } catch (_: Throwable) {
-                    }
+                synchronized(lock) {
+                    activeJob = null
                 }
             }
         }
@@ -87,9 +87,25 @@ object LocalAiBridge {
 
     @JvmStatic
     fun cancel() {
-        activeJob?.cancel()
-        activeJob = null
-        activeModel = null
+        synchronized(lock) {
+            activeJob?.cancel()
+            activeJob = null
+        }
+    }
+
+    @JvmStatic
+    fun release() {
+        synchronized(lock) {
+            activeJob?.cancel()
+            activeJob = null
+            activeModel?.let {
+                try {
+                    Llama.releaseModel(it)
+                } catch (_: Throwable) {
+                }
+            }
+            activeModel = null
+        }
     }
 
     private fun copyBundledModel(context: Context, target: File) {
