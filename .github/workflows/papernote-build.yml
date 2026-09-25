@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [main, papernote-native]
+    branches: [main, papernote-native, feature/papernote-3.0-pro-ai]
   workflow_dispatch:
 
 permissions:
