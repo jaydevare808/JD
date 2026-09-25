@@ -1,0 +1,25 @@
+PaperNote third-party notices
+==============================
+
+PaperNote bundles the following open-source AI runtime/model assets for its optional on-device AI assistant.
+
+1) llama-android
+Copyright and license information:
+https://github.com/ffmpegkit-maintained/llama-android
+
+The project is distributed under the MIT License. PaperNote uses the published Maven Central artifact:
+dev.ffmpegkit-maintained:llama-android:0.1.1
+
+2) SmolLM2-135M-Instruct GGUF
+Model source:
+https://huggingface.co/QuantFactory/SmolLM2-135M-Instruct-GGUF
+
+The referenced model files are distributed under the Apache License 2.0.
+PaperNote bundles the Q4_K_M GGUF file identified in the build script by SHA-256:
+8030f04528538d47bda434f6f0bdf3952c40a58123e4d5e755332f23731a868
+
+AI model note
+-------------
+The bundled model is a compact 135M-parameter language model intended for lightweight,
+on-device assistance. Its output can be incorrect or incomplete. Users should verify
+important academic facts and calculations.
