@@ -50,7 +50,7 @@ tasks.register("prepareAiModel") {
             int read
             while ((read = input.read(buffer)) != -1) digest.update(buffer, 0, read)
         }
-        def hash = digest.digest().collect { String.format("%02x", it) }.join()
+        def hash = digest.digest().collect { String.format("%02x", it & 0xff) }.join()
         if (hash != aiModelSha256) {
             throw new GradleException("AI model SHA-256 mismatch. Expected $aiModelSha256 but got $hash")
         }
