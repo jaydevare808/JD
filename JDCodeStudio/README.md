@@ -15,3 +15,5 @@ PHP, Python, C, C++, Java and Bash are represented as runtime adapters. Native t
 
 ## Build
 Android Gradle Plugin 9.4.0, Gradle 9.6.0, JDK 17.
+
+Build verification is handled by the repository CI workflow.
