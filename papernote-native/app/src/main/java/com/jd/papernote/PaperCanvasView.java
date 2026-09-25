@@ -6,7 +6,6 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Path;
-import android.graphics.PointF;
 import android.graphics.PorterDuff;
 import android.graphics.PorterDuffXfermode;
 import android.graphics.RectF;
@@ -16,7 +15,6 @@ import android.view.ScaleGestureDetector;
 import android.view.View;
 
 import java.util.ArrayDeque;
-import java.util.ArrayList;
 import java.util.Deque;
 
 public final class PaperCanvasView extends View {
@@ -51,7 +49,6 @@ public final class PaperCanvasView extends View {
     private Bitmap inkBitmap;
     private Bitmap baseBitmap;
     private Listener listener;
-    private SoundEngine soundEngine;
 
     private int tool = TOOL_PEN;
     private int inkColor = Color.rgb(24, 35, 51);
@@ -72,7 +69,9 @@ public final class PaperCanvasView extends View {
     private float shapeEndY;
 
     private final Path liveStroke = new Path();
-    private final ArrayList<PointF> livePoints = new ArrayList<>(256);
+    private float[] livePointX = new float[1024];
+    private float[] livePointY = new float[1024];
+    private int livePointCount = 0;
     private float liveLastX;
     private float liveLastY;
     private float liveCurveEndX;
@@ -124,10 +123,6 @@ public final class PaperCanvasView extends View {
 
     public void setListener(Listener listener) {
         this.listener = listener;
-    }
-
-    public void setSoundEngine(SoundEngine soundEngine) {
-        this.soundEngine = soundEngine;
     }
 
     public void setTool(int tool) {
@@ -289,10 +284,7 @@ public final class PaperCanvasView extends View {
     private void execute(EditCommand command) {
         if (command == null || inkBitmap == null) return;
         undo.addLast(command);
-        while (undo.size() > 80) {
-            EditCommand old = undo.removeFirst();
-            old.release();
-        }
+        trimUndoHistory();
         releaseRedo();
         applyCommand(command);
         notifyDirty();
@@ -303,18 +295,12 @@ public final class PaperCanvasView extends View {
     }
 
     private void rebuildFromBase() {
-        if (baseBitmap == null) return;
-        Bitmap rebuilt = baseBitmap.copy(Bitmap.Config.ARGB_8888, true);
-        Bitmap old = inkBitmap;
-        inkBitmap = rebuilt;
-
+        if (baseBitmap == null || inkBitmap == null || inkBitmap.isRecycled()) return;
         Canvas canvas = new Canvas(inkBitmap);
+        canvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR);
+        canvas.drawBitmap(baseBitmap, 0f, 0f, bitmapPaint);
         for (EditCommand command : undo) {
             command.apply(canvas);
-        }
-
-        if (old != null && old != baseBitmap && !old.isRecycled()) {
-            old.recycle();
         }
     }
 
@@ -322,6 +308,18 @@ public final class PaperCanvasView extends View {
         while (!redo.isEmpty()) {
             redo.removeFirst().release();
         }
+    }
+
+    private void trimUndoHistory() {
+        while (undo.size() > 40) {
+            EditCommand old = undo.removeFirst();
+            old.release();
+        }
+    }
+
+    private void clearHistory() {
+        while (!undo.isEmpty()) undo.removeFirst().release();
+        while (!redo.isEmpty()) redo.removeFirst().release();
     }
 
     private void notifyDirty() {
@@ -570,7 +568,6 @@ public final class PaperCanvasView extends View {
                     appendLivePoint(pagePoint[0], pagePoint[1]);
 
                     postInvalidateOnAnimation();
-                    if (soundEngine != null && tool != TOOL_ERASER) soundEngine.tick();
                 } else if (isShapeTool(tool)) {
                     screenToPage(event.getX(index), event.getY(index), pagePoint);
                     shapeEndX = pagePoint[0];
@@ -667,8 +664,20 @@ public final class PaperCanvasView extends View {
 
     private void beginLiveStroke(float x, float y) {
         liveStroke.reset();
-        livePoints.clear();
-        livePoints.add(new PointF(x, y));
+        livePointCount = 0;
+        if (livePointCount >= livePointX.length) {
+            if (livePointX.length >= 4096) return;
+            int newSize = Math.min(4096, livePointX.length * 2);
+            float[] nx = new float[newSize];
+            float[] ny = new float[newSize];
+            System.arraycopy(livePointX, 0, nx, 0, livePointCount);
+            System.arraycopy(livePointY, 0, ny, 0, livePointCount);
+            livePointX = nx;
+            livePointY = ny;
+        }
+        livePointX[livePointCount] = x;
+        livePointY[livePointCount] = y;
+        livePointCount++;
         liveStroke.moveTo(x, y);
         liveLastX = x;
         liveLastY = y;
@@ -689,7 +698,7 @@ public final class PaperCanvasView extends View {
         float y = liveLastY + (rawY - liveLastY) * alpha;
 
         float distance = (float) Math.hypot(x - liveLastX, y - liveLastY);
-        if (distance < 0.22f) return;
+        if (distance < 1.15f) return;
 
         livePoints.add(new PointF(x, y));
 
@@ -717,46 +726,40 @@ public final class PaperCanvasView extends View {
         liveStrokeMoved = true;
     }
 
+    private final Paint eraserPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+
     private void drawImmediateEraserSegment(float x1, float y1, float x2, float y2) {
         if (inkBitmap == null) return;
 
-        Paint eraser = new Paint(Paint.ANTI_ALIAS_FLAG);
-        eraser.setStyle(Paint.Style.STROKE);
-        eraser.setStrokeCap(Paint.Cap.ROUND);
-        eraser.setStrokeJoin(Paint.Join.ROUND);
-        eraser.setStrokeWidth(Math.max(8f, penSize * 3.2f));
-        eraser.setColor(Color.TRANSPARENT);
-        eraser.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.CLEAR));
+        eraserPaint.setStyle(Paint.Style.STROKE);
+        eraserPaint.setStrokeCap(Paint.Cap.ROUND);
+        eraserPaint.setStrokeJoin(Paint.Join.ROUND);
+        eraserPaint.setStrokeWidth(Math.max(8f, penSize * 3.2f));
+        eraserPaint.setColor(Color.TRANSPARENT);
+        eraserPaint.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.CLEAR));
 
-        Canvas bitmapCanvas = new Canvas(inkBitmap);
-        bitmapCanvas.drawLine(x1, y1, x2, y2, eraser);
-        eraser.setXfermode(null);
+        new Canvas(inkBitmap).drawLine(x1, y1, x2, y2, eraserPaint);
+        eraserPaint.setXfermode(null);
     }
 
     private void commitLiveStroke() {
-        if (!liveStrokeActive || livePoints.isEmpty()) {
+        if (!liveStrokeActive || livePointCount == 0) {
             cancelLiveStroke();
             return;
         }
 
-        ArrayList<PointF> points = new ArrayList<>(livePoints.size());
-        for (PointF point : livePoints) {
-            points.add(new PointF(point.x, point.y));
-        }
+        StrokeCommand command = StrokeCommand.fromBuffers(
+                livePointX, livePointY, livePointCount, inkColor, penSize, tool
+        );
 
         if (tool == TOOL_ERASER) {
-            // The erase has already been applied live. Add the command to history only;
-            // executing it again is unnecessary and can create extra work on large strokes.
-            undo.addLast(new StrokeCommand(points, inkColor, penSize, tool));
-            while (undo.size() > 80) {
-                EditCommand old = undo.removeFirst();
-                old.release();
-            }
+            undo.addLast(command);
+            trimUndoHistory();
             releaseRedo();
             notifyDirty();
             cancelLiveStroke();
         } else {
-            execute(new StrokeCommand(points, inkColor, penSize, tool));
+            execute(command);
             cancelLiveStroke();
         }
     }
@@ -834,48 +837,31 @@ public final class PaperCanvasView extends View {
         void release() {}
     }
 
-    private static Path buildSmoothPath(ArrayList<PointF> points) {
-        Path path = new Path();
-        if (points.isEmpty()) return path;
-
-        PointF first = points.get(0);
-        path.moveTo(first.x, first.y);
-
-        if (points.size() == 1) return path;
-        if (points.size() == 2) {
-            PointF second = points.get(1);
-            path.lineTo(second.x, second.y);
-            return path;
-        }
-
-        PointF previous = points.get(0);
-        for (int i = 1; i < points.size(); i++) {
-            PointF current = points.get(i);
-            if (i == points.size() - 1) {
-                path.quadTo(previous.x, previous.y, current.x, current.y);
-            } else {
-                PointF next = points.get(i + 1);
-                float midX = (current.x + next.x) * 0.5f;
-                float midY = (current.y + next.y) * 0.5f;
-                path.quadTo(current.x, current.y, midX, midY);
-            }
-            previous = current;
-        }
-
-        return path;
-    }
-
     private static final class StrokeCommand extends EditCommand {
-        private final ArrayList<PointF> points;
+        private final float[] xs;
+        private final float[] ys;
+        private final int count;
         private final int color;
         private final float width;
         private final int tool;
 
-        StrokeCommand(ArrayList<PointF> points, int color, float width, int tool) {
-            this.points = points;
+        private StrokeCommand(float[] xs, float[] ys, int count, int color, float width, int tool) {
+            this.xs = xs;
+            this.ys = ys;
+            this.count = count;
             this.color = color;
             this.width = width;
             this.tool = tool;
+        }
+
+        static StrokeCommand fromBuffers(float[] xs, float[] ys, int count,
+                                          int color, float width, int tool) {
+            int safeCount = Math.max(1, Math.min(count, Math.min(xs.length, ys.length)));
+            float[] copyX = new float[safeCount];
+            float[] copyY = new float[safeCount];
+            System.arraycopy(xs, 0, copyX, 0, safeCount);
+            System.arraycopy(ys, 0, copyY, 0, safeCount);
+            return new StrokeCommand(copyX, copyY, safeCount, color, width, tool);
         }
 
         @Override
@@ -896,14 +882,24 @@ public final class PaperCanvasView extends View {
                 if (tool == TOOL_HIGHLIGHTER) p.setStrokeCap(Paint.Cap.SQUARE);
             }
 
-            Path path = buildSmoothPath(points);
-            if (points.size() == 1) {
+            if (count == 1) {
                 p.setStyle(Paint.Style.FILL);
-                canvas.drawCircle(points.get(0).x, points.get(0).y, Math.max(0.8f, p.getStrokeWidth() * 0.5f), p);
+                canvas.drawCircle(xs[0], ys[0],
+                        Math.max(0.8f, p.getStrokeWidth() * 0.5f), p);
             } else {
+                Path path = new Path();
+                path.moveTo(xs[0], ys[0]);
+                for (int i = 1; i < count; i++) {
+                    if (i == count - 1) {
+                        path.quadTo(xs[i - 1], ys[i - 1], xs[i], ys[i]);
+                    } else {
+                        float midX = (xs[i] + xs[i + 1]) * 0.5f;
+                        float midY = (ys[i] + ys[i + 1]) * 0.5f;
+                        path.quadTo(xs[i], ys[i], midX, midY);
+                    }
+                }
                 canvas.drawPath(path, p);
             }
-
             p.setXfermode(null);
         }
     }
