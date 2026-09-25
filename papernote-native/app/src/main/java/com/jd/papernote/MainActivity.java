@@ -60,7 +60,6 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
     private TextView titleLabel;
     private Button writeModeButton;
     private Button palmButton;
-    private Button soundButton;
     private int pendingExport = 0;
 
     @Override
