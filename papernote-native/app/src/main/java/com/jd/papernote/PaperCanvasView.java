@@ -514,6 +514,14 @@ public final class PaperCanvasView extends View {
         shapePaint.setStyle(Paint.Style.STROKE);
     }
 
+    private boolean isDrawingTool(int value) {
+        return value == TOOL_PEN || value == TOOL_HIGHLIGHTER || value == TOOL_ERASER;
+    }
+
+    private boolean isShapeTool(int value) {
+        return value == TOOL_LINE || value == TOOL_RECT || value == TOOL_OVAL;
+    }
+
     @Override
     public boolean onTouchEvent(MotionEvent event) {
         if (!writeMode) return handlePanTouch(event);
