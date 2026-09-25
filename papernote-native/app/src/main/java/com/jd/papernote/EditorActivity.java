@@ -563,6 +563,10 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
         paper.setOnClickListener(v -> showPaperDialog());
         bottom.addView(paper);
 
+        Button pages = toolbarButton("PAGES");
+        pages.setOnClickListener(v -> showPageNavigator());
+        bottom.addView(pages);
+
         Button export = toolbarButton("EXPORT");
         export.setOnClickListener(v -> showExportDialog());
         bottom.addView(export);
@@ -727,7 +731,8 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
     private void showPaperDialog() {
         String[] items = {
                 "Blank", "Ruled", "Graph", "Dot Grid", "Math Practice",
-                "2-Mark Answer", "3-Mark Answer", "4-Mark Answer", "Science Experiment"
+                "2-Mark Answer", "3-Mark Answer", "4-Mark Answer", "Science Experiment",
+                "Cornell Notes", "Problem → Solution", "Formula Sheet", "Flashcard Grid"
         };
         String[] values = {
                 PaperCanvasView.PAPER_BLANK,
@@ -738,7 +743,11 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
                 PaperCanvasView.PAPER_EXAM_2,
                 PaperCanvasView.PAPER_EXAM_3,
                 PaperCanvasView.PAPER_EXAM_4,
-                PaperCanvasView.PAPER_EXPERIMENT
+                PaperCanvasView.PAPER_EXPERIMENT,
+                PaperCanvasView.PAPER_CORNELL,
+                PaperCanvasView.PAPER_PROBLEM,
+                PaperCanvasView.PAPER_FORMULA,
+                PaperCanvasView.PAPER_FLASHCARDS
         };
         int checked = 1;
         String current = currentNotebook.pages.get(currentPageIndex).paperType;
@@ -1562,6 +1571,63 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
                 canvas.drawRoundRect(left, top, left + cellW - 4, top + cellH - 4, 7, 7, paint);
             }
         }
+    }
+
+    private void showPageNavigator() {
+        LinearLayout list = new LinearLayout(this);
+        list.setOrientation(LinearLayout.VERTICAL);
+        list.setPadding(dp(6), dp(3), dp(6), dp(6));
+
+        for (int i = 0; i < currentNotebook.pages.size(); i++) {
+            final int index = i;
+            NotebookStore.PageMeta page = currentNotebook.pages.get(i);
+            NotebookStore.PageStats stats = store.getPageStats(page.id);
+            int open = 0;
+            for (NotebookStore.StudyMark mark : store.getStudyMarks(page.id)) {
+                if (!mark.resolved) open++;
+            }
+
+            LinearLayout row = new LinearLayout(this);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setPadding(dp(9), dp(8), dp(9), dp(8));
+            row.setBackground(rounded(i == currentPageIndex ? 0xFFEAF0FF : 0xFFFFFFFF, 13));
+
+            TextView label = text(
+                    (i + 1) + ". " + page.title,
+                    14, 0xFF182339, i == currentPageIndex);
+            row.addView(label, new LinearLayout.LayoutParams(0, -2, 1f));
+
+            TextView meta = text(
+                    open + " open  •  " + stats.strokes + " strokes",
+                    10, 0xFF667085, false);
+            row.addView(meta);
+
+            row.setOnClickListener(v -> {
+                saveCurrentPageNow();
+                currentPageIndex = index;
+                loadCurrentPage();
+                dialogSafeDismiss();
+            });
+            list.addView(row, new LinearLayout.LayoutParams(-1, dp(48)));
+        }
+
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        scroll.addView(list);
+        final AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("Pages • " + currentNotebook.pages.size())
+                .setView(scroll)
+                .setPositiveButton("Done", null)
+                .create();
+        this.pageNavigatorDialog = dialog;
+        dialog.setOnDismissListener(d -> this.pageNavigatorDialog = null);
+        dialog.show();
+    }
+
+    private AlertDialog pageNavigatorDialog;
+
+    private void dialogSafeDismiss() {
+        if (pageNavigatorDialog != null && pageNavigatorDialog.isShowing()) pageNavigatorDialog.dismiss();
     }
 
     private void showCalculator() {
