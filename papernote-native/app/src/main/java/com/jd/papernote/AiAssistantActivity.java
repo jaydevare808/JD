@@ -68,8 +68,16 @@ public final class AiAssistantActivity extends Activity {
     }
 
     @Override
+    protected void onStop() {
+        super.onStop();
+        // The local model can use hundreds of MB of native memory. Release it as soon
+        // as the AI screen is no longer visible so handwriting remains responsive.
+        LocalAiBridge.release();
+    }
+
+    @Override
     protected void onDestroy() {
-        LocalAiBridge.cancel();
+        LocalAiBridge.release();
         super.onDestroy();
     }
 
@@ -211,12 +219,11 @@ public final class AiAssistantActivity extends Activity {
 
     private LinearLayout contextCard(NotebookStore.NotebookMeta notebook) {
         LinearLayout box = card();
-        int openMarks = store.countStudyMarks(notebook, null, true);
-        box.addView(text("CURRENT STUDY CONTEXT", 11, 0xFF667085, true));
+        box.addView(text("CURRENT NOTEBOOK", 11, 0xFF667085, true));
         box.addView(text(notebook.title + " • " + notebook.subject, 15, 0xFF182339, true));
         box.addView(text(
-                notebook.pages.size() + " pages • " + openMarks + " unresolved markers • " +
-                        formatDuration(store.getNotebookActiveMs(notebook)),
+                notebook.pages.size() + " pages • current page " +
+                        Math.min(pageIndex + 1, notebook.pages.size()),
                 12, 0xFF5B6473, false));
         return box;
     }
@@ -269,22 +276,11 @@ public final class AiAssistantActivity extends Activity {
         try {
             NotebookStore.NotebookMeta n = store.get(notebookId);
             if (n == null) return "No notebook context was selected.";
-            int doubts = store.countStudyMarks(n, NotebookStore.StudyMark.DOUBT, true);
-            int mistakes = store.countStudyMarks(n, NotebookStore.StudyMark.MISTAKE, true);
-            int due = 0;
-            long now = System.currentTimeMillis();
-            for (NotebookStore.PageMeta p : n.pages) {
-                for (NotebookStore.StudyMark mark : store.getStudyMarks(p.id)) {
-                    if (mark.isDue(now)) due++;
-                }
-            }
-            String pageTitle = pageIndex >= 0 && pageIndex < n.pages.size() ? n.pages.get(pageIndex).title : "current page";
+            String pageTitle = pageIndex >= 0 && pageIndex < n.pages.size()
+                    ? n.pages.get(pageIndex).title : "current page";
             return "Notebook: " + n.title + "\nSubject: " + n.subject +
                     "\nPages: " + n.pages.size() +
-                    "\nCurrent page: " + pageTitle +
-                    "\nOpen doubts: " + doubts +
-                    "\nOpen mistakes: " + mistakes +
-                    "\nDue reviews: " + due;
+                    "\nCurrent page: " + pageTitle;
         } catch (Exception e) {
             return "Notebook context unavailable.";
         }
@@ -303,7 +299,7 @@ public final class AiAssistantActivity extends Activity {
                 task = "Create a compact revision sheet: key ideas, formulas, common mistakes, and 3 quick self-check questions.";
                 break;
             case "Plan":
-                task = "Create a practical study plan using the supplied notebook context. Keep it realistic and prioritize unresolved doubts, mistakes, and due reviews.";
+                task = "Create a practical study plan using only the supplied notebook context and the student's request. Keep it realistic and concise.";
                 break;
             default:
                 task = "Teach the topic like a patient school tutor. Start with the core idea, then a worked example, then a quick self-check.";
