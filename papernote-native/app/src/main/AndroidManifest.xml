@@ -30,6 +30,10 @@
             android:screenOrientation="unspecified"
             android:exported="false" />
         <activity
+            android:name=".AiAssistantActivity"
+            android:screenOrientation="unspecified"
+            android:exported="false" />
+        <activity
             android:name=".MainActivity"
             android:screenOrientation="unspecified"
             android:exported="true"
