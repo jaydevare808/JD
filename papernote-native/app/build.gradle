@@ -49,7 +49,14 @@ tasks.register("prepareAiModel") {
             int read
             while ((read = input.read(buffer)) != -1) digest.update(buffer, 0, read)
         }
-        def hash = digest.digest().collect { b -> Integer.toHexString((b & 0xff) | 0x100).substring(1) }.join()
+        byte[] digestBytes = digest.digest()
+        StringBuilder hashBuilder = new StringBuilder(digestBytes.length * 2)
+        for (byte value : digestBytes) {
+            String hex = Integer.toHexString(value & 0xff)
+            if (hex.length() == 1) hashBuilder.append('0')
+            hashBuilder.append(hex)
+        }
+        def hash = hashBuilder.toString()
         if (hash != aiModelSha256) {
             throw new GradleException("AI model SHA-256 mismatch. Expected $aiModelSha256 but got $hash")
         }
