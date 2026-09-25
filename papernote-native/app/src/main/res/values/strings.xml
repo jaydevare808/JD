@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">PaperNote</string>
+    <string name="ai_model_name">SmolLM2 360M Instruct Q4_K_M</string>
+    <string name="ai_model_size">~271 MB</string>
 </resources>
