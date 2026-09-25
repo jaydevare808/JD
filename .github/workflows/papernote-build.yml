@@ -57,7 +57,7 @@ jobs:
           cp app/build/outputs/apk/release/app-release.apk artifacts/PaperNote-stable.apk
           cp app/build/outputs/apk/release/app-release.apk artifacts/PaperNote-release.apk
           cp app/build/outputs/bundle/release/app-release.aab artifacts/PaperNote-release.aab
-          zip -r artifacts/PaperNote-source.zip . -x '.gradle/*' 'app/build/*'
+          # Source stays in the Git branch; do not duplicate the 105 MB AI model inside artifacts.
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
@@ -67,7 +67,6 @@ jobs:
             papernote-native/artifacts/PaperNote-stable.apk
             papernote-native/artifacts/PaperNote-release.apk
             papernote-native/artifacts/PaperNote-release.aab
-            papernote-native/artifacts/PaperNote-source.zip
             papernote-native/app/build/reports/lint-results-release.html
           if-no-files-found: error
 
