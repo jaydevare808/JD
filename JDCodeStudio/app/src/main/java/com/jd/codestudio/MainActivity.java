@@ -726,34 +726,6 @@ public class MainActivity extends Activity {
         }).start();
     }
 
-        saveFile();
-
-        String language = (String) languageSpinner.getSelectedItem();
-        String code = editor.getText().toString();
-
-        hidePreview();
-        output.setText("");
-        statusView.setText("RUNNING");
-
-        switch (language) {
-            case "HTML":
-                runHtml(code);
-                break;
-            case "CSS":
-                runCss(code);
-                break;
-            case "JavaScript":
-                runJavaScript(code);
-                break;
-            case "SQL":
-                runSql(code);
-                break;
-            default:
-                runtimeNotice(language);
-                break;
-        }
-    }
-
     private void runHtml(String html) {
         showPreview(210, 110);
         preview.loadDataWithBaseURL("https://localhost/", html, "text/html", "UTF-8", null);
