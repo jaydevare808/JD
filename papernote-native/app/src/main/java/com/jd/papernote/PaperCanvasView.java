@@ -700,9 +700,21 @@ public final class PaperCanvasView extends View {
         float distance = (float) Math.hypot(x - liveLastX, y - liveLastY);
         if (distance < 1.15f) return;
 
-        livePoints.add(new PointF(x, y));
+        if (livePointCount >= livePointX.length) {
+            if (livePointX.length >= 4096) return;
+            int newSize = Math.min(4096, livePointX.length * 2);
+            float[] nx = new float[newSize];
+            float[] ny = new float[newSize];
+            System.arraycopy(livePointX, 0, nx, 0, livePointCount);
+            System.arraycopy(livePointY, 0, ny, 0, livePointCount);
+            livePointX = nx;
+            livePointY = ny;
+        }
+        livePointX[livePointCount] = x;
+        livePointY[livePointCount] = y;
+        livePointCount++;
 
-        if (livePoints.size() == 2) {
+        if (livePointCount == 2) {
             liveStroke.lineTo(x, y);
             liveCurveEndX = x;
             liveCurveEndY = y;
@@ -766,7 +778,7 @@ public final class PaperCanvasView extends View {
 
     private void cancelLiveStroke() {
         liveStroke.reset();
-        livePoints.clear();
+        livePointCount = 0;
         liveStrokeActive = false;
         liveStrokeMoved = false;
         drawing = false;
