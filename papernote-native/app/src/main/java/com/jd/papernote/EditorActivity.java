@@ -872,6 +872,8 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
         menu.getMenu().add("Science experiment template");
         menu.getMenu().add("Concept thread");
         menu.getMenu().add("Handwriting replay");
+        menu.getMenu().add("Import PDF as notebook pages");
+        menu.getMenu().add("AI Study Assistant");
         menu.getMenu().add("Quick-share notebook backup");
         if (examEndAt > 0L) menu.getMenu().add("Stop exam timer");
         menu.setOnMenuItemClickListener(item -> {
@@ -909,6 +911,14 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
             }
             if (title.startsWith("Concept thread")) {
                 showConceptThread();
+                return true;
+            }
+            if ("Import PDF as notebook pages".equals(title)) {
+                choosePdfImport();
+                return true;
+            }
+            if ("AI Study Assistant".equals(title)) {
+                openAiAssistant();
                 return true;
             }
             if ("Handwriting replay".equals(title)) {
