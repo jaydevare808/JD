@@ -164,7 +164,7 @@ object LocalAiBridge {
     }
 
     private fun prepareModel(context: Context, target: File) {
-        if (target.exists() && target.length() >= 200_000_000L) return
+        if (target.exists() && target.length() >= 80_000_000L) return
 
         target.parentFile?.mkdirs()
         val temp = File(target.parentFile, target.name + ".part")
