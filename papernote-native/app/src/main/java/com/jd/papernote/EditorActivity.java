@@ -1320,11 +1320,6 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
         }
     }
 
-    private void updateSoundButton() {
-        if (soundButton != null) {
-            soundButton.setText(soundEngine.isEnabled() ? "SOUND✓" : "SOUND");
-        }
-    }
 
     private Button styledButton(String label, boolean primary) {
         Button b = new Button(this);
