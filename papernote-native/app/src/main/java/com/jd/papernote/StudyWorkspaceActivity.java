@@ -147,6 +147,7 @@ public final class StudyWorkspaceActivity extends Activity {
         addQuick(quick2, "Ghost", "ghost");
         addQuick(quick2, "Exam", "exam");
         addQuick(quick2, "Experiment", "experiment");
+        addQuick(quick2, "AI Tutor", "ai");
         body.addView(quick2, bottomMargin(dp(12)));
 
         body.addView(sectionLabel("REVISION QUEUE"));
@@ -376,6 +377,13 @@ public final class StudyWorkspaceActivity extends Activity {
     private void openEditor(String feature, int pageIndex) {
         NotebookStore.NotebookMeta n = selectedNotebook();
         if (n == null) return;
+        if ("ai".equals(feature)) {
+            Intent aiIntent = new Intent(this, AiAssistantActivity.class);
+            aiIntent.putExtra("notebook_id", n.id);
+            aiIntent.putExtra("page_index", Math.max(0, Math.min(pageIndex, n.pages.size() - 1)));
+            startActivity(aiIntent);
+            return;
+        }
         Intent intent = new Intent(this, EditorActivity.class);
         intent.putExtra("notebook_id", n.id);
         intent.putExtra("page_index", Math.max(0, Math.min(pageIndex, n.pages.size() - 1)));
