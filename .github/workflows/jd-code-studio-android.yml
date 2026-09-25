@@ -1,8 +1,8 @@
 name: JD Code Studio Android APK
 
 on:
-  push:
-    branches: [ "jd-code-studio" ]
+  pull_request:
+    branches: [ "main" ]
   workflow_dispatch:
 
 jobs:
