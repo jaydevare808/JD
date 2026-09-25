@@ -198,6 +198,38 @@ public class MainActivity extends Activity implements PaperCanvasView.Listener {
         chipsScroll.addView(chips);
         root.addView(chipsScroll);
 
+        LinearLayout aiCard = new LinearLayout(this);
+        aiCard.setOrientation(LinearLayout.VERTICAL);
+        aiCard.setPadding(dp(16), dp(14), dp(16), dp(14));
+        aiCard.setBackground(rounded(0xFFEFF3FF, 18));
+        aiCard.setElevation(dp(1.5f));
+
+        LinearLayout aiTop = new LinearLayout(this);
+        aiTop.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout aiText = new LinearLayout(this);
+        aiText.setOrientation(LinearLayout.VERTICAL);
+        aiText.addView(text("PAPERNOTE AI", 12, 0xFF405DE6, true));
+        aiText.addView(text("Free on-device tutor", 18, 0xFF182339, true));
+        aiText.addView(text(
+                "Tutor • solve • quiz • revise • plan • no API key",
+                12, 0xFF5B6473, false
+        ));
+        aiTop.addView(aiText, new LinearLayout.LayoutParams(0, -2, 1f));
+
+        Button aiButton = styledButton("Ask AI", true);
+        aiButton.setOnClickListener(v -> startActivity(new Intent(this, AiAssistantActivity.class)));
+        aiTop.addView(aiButton, new LinearLayout.LayoutParams(dp(92), dp(44)));
+        aiCard.addView(aiTop);
+        TextView aiHint = text(
+                "The bundled model works without cloud inference. The first AI request may take longer while the model is prepared.",
+                11, 0xFF667085, false
+        );
+        aiHint.setPadding(0, dp(7), 0, 0);
+        aiCard.addView(aiHint);
+        LinearLayout.LayoutParams aiParams = new LinearLayout.LayoutParams(-1, -2);
+        aiParams.setMargins(dp(16), dp(2), dp(16), dp(12));
+        root.addView(aiCard, aiParams);
+
         LinearLayout studySection = new LinearLayout(this);
         studySection.setOrientation(LinearLayout.VERTICAL);
         studySection.setPadding(dp(16), dp(2), dp(16), dp(12));
