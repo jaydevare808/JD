@@ -1,180 +1,714 @@
 package com.jd.codestudio;
 
-import android.app.*;
-import android.content.*;
+import android.app.Activity;
+import android.content.Intent;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.net.Uri;
 import android.os.Bundle;
-import android.text.*;
+import android.text.Editable;
+import android.text.SpannableStringBuilder;
+import android.text.TextWatcher;
 import android.text.style.ForegroundColorSpan;
-import android.view.*;
-import android.webkit.*;
-import android.widget.*;
-import java.io.*;
+import android.view.Gravity;
+import android.view.View;
+import android.webkit.ConsoleMessage;
+import android.webkit.WebChromeClient;
+import android.webkit.WebView;
+import android.widget.AdapterView;
+import android.widget.ArrayAdapter;
+import android.widget.Button;
+import android.widget.EditText;
+import android.widget.LinearLayout;
+import android.widget.ScrollView;
+import android.widget.Spinner;
+import android.widget.TextView;
+import android.widget.Toast;
+
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
-import java.util.*;
-import java.util.regex.*;
-import org.json.JSONObject;
+import java.nio.file.Files;
+import java.util.Arrays;
+import java.util.LinkedHashMap;
+import java.util.Locale;
+import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class MainActivity extends Activity {
     private static final int OPEN_FILE = 1001;
     private static final int SAVE_FILE = 1002;
 
-    private LinearLayout root, editorRow, outputPanel;
+    private LinearLayout root;
+    private LinearLayout editorRow;
+    private LinearLayout outputPanel;
     private EditText editor;
-    private TextView lineNumbers, output, fileNameView, languageView, statusView;
+    private TextView lineNumbers;
+    private TextView output;
+    private TextView fileNameView;
+    private TextView languageView;
+    private TextView statusView;
     private WebView preview;
     private Spinner languageSpinner;
-    private boolean internalChange = false;
-    private boolean suppressLanguageEvent = false;
-    private File currentFile;
-    private final Map<String, String> samples = new LinkedHashMap<>();
-    private final String[] languages = {"PHP","Python","JavaScript","HTML","CSS","C","C++","Java","SQL","Bash"};
 
-    @Override protected void onCreate(Bundle b) {
-        super.onCreate(b);
-        getWindow().setStatusBarColor(Color.rgb(11,15,20));
-        getWindow().setNavigationBarColor(Color.rgb(11,15,20));
+    private boolean internalChange;
+    private boolean suppressLanguageEvent;
+    private File currentFile;
+
+    private final String[] languages = {
+            "PHP", "Python", "JavaScript", "HTML", "CSS",
+            "C", "C++", "Java", "SQL", "Bash"
+    };
+
+    private final Map<String, String> samples = new LinkedHashMap<>();
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        getWindow().setStatusBarColor(Color.rgb(11, 15, 20));
+        getWindow().setNavigationBarColor(Color.rgb(11, 15, 20));
+
         initSamples();
         buildUi();
+
         File dir = new File(getFilesDir(), "projects/default");
-        if (!dir.exists()) dir.mkdirs();
+        if (!dir.exists() && !dir.mkdirs()) {
+            toast("Could not create project folder");
+        }
+
         currentFile = new File(dir, "main.php");
-        if (!currentFile.exists()) writeText(currentFile, samples.get("PHP"));
+        if (!currentFile.exists()) {
+            writeText(currentFile, samples.get("PHP"));
+        }
         loadFile(currentFile);
     }
 
     private void initSamples() {
-        samples.put("PHP", "<?php\n\n$name = \"JD\";\n$marks = 85;\n\necho \"Name: \" . $name . \"<br>\";\necho \"Marks: \" . $marks;\n\n?>");
-        samples.put("Python", "name = \"JD\"\nmarks = 85\nprint(\"Name:\", name)\nprint(\"Marks:\", marks)");
-        samples.put("JavaScript", "const name = \"JD\";\nconst marks = 85;\nconsole.log(\"Name:\", name);\nconsole.log(\"Marks:\", marks);");
-        samples.put("HTML", "<!doctype html>\n<html>\n<body>\n<h1>JD Code Studio</h1>\n<p>Hello from HTML.</p>\n</body>\n</html>");
-        samples.put("CSS", "body { font-family: sans-serif; padding: 24px; }\nh1 { font-size: 28px; }\n.note { padding: 12px; border: 1px solid #ccc; }");
-        samples.put("C", "#include <stdio.h>\nint main(){\n  printf(\"Hello from C\\n\");\n  return 0;\n}");
-        samples.put("C++", "#include <iostream>\nint main(){\n  std::cout << \"Hello from C++\\n\";\n  return 0;\n}");
-        samples.put("Java", "public class Main {\n  public static void main(String[] args) {\n    System.out.println(\"Hello from Java\");\n  }\n}");
-        samples.put("SQL", "CREATE TABLE students(id INTEGER, name TEXT, marks INTEGER);\nINSERT INTO students VALUES(1,'JD',85);\nINSERT INTO students VALUES(2,'Riya',92);\nSELECT * FROM students;");
-        samples.put("Bash", "echo \"Hello from Bash\"\nname=JD\necho \"Name: $name\"");
+        samples.put("PHP",
+                "<?php\n\n" +
+                "$name = \"JD\";\n" +
+                "$marks = 85;\n\n" +
+                "echo \"Name: \" . $name . \"<br>\";\n" +
+                "echo \"Marks: \" . $marks;\n\n" +
+                "?>");
+
+        samples.put("Python",
+                "name = \"JD\"\n" +
+                "marks = 85\n\n" +
+                "print(\"Name:\", name)\n" +
+                "print(\"Marks:\", marks)");
+
+        samples.put("JavaScript",
+                "const name = \"JD\";\n" +
+                "const marks = 85;\n\n" +
+                "console.log(\"Name:\", name);\n" +
+                "console.log(\"Marks:\", marks);");
+
+        samples.put("HTML",
+                "<!doctype html>\n" +
+                "<html>\n" +
+                "<body>\n" +
+                "  <h1>JD Code Studio</h1>\n" +
+                "  <p>Hello from HTML.</p>\n" +
+                "</body>\n" +
+                "</html>");
+
+        samples.put("CSS",
+                "body { font-family: sans-serif; padding: 24px; }\n" +
+                "h1 { font-size: 28px; }\n" +
+                ".note { padding: 12px; border: 1px solid #ccc; }");
+
+        samples.put("C",
+                "#include <stdio.h>\n\n" +
+                "int main() {\n" +
+                "    printf(\"Hello from C\\n\");\n" +
+                "    return 0;\n" +
+                "}");
+
+        samples.put("C++",
+                "#include <iostream>\n\n" +
+                "int main() {\n" +
+                "    std::cout << \"Hello from C++\\n\";\n" +
+                "    return 0;\n" +
+                "}");
+
+        samples.put("Java",
+                "public class Main {\n" +
+                "    public static void main(String[] args) {\n" +
+                "        System.out.println(\"Hello from Java\");\n" +
+                "    }\n" +
+                "}");
+
+        samples.put("SQL",
+                "CREATE TABLE students(id INTEGER, name TEXT, marks INTEGER);\n" +
+                "INSERT INTO students VALUES(1, 'JD', 85);\n" +
+                "INSERT INTO students VALUES(2, 'Riya', 92);\n" +
+                "SELECT * FROM students;");
+
+        samples.put("Bash",
+                "echo \"Hello from Bash\"\n" +
+                "name=JD\n" +
+                "echo \"Name: $name\"");
     }
 
-    private int dp(float v){ return (int)(v * getResources().getDisplayMetrics().density + 0.5f); }
-    private TextView tv(String text, float size, int color){
-        TextView t=new TextView(this); t.setText(text); t.setTextSize(size); t.setTextColor(color); t.setGravity(Gravity.CENTER_VERTICAL); return t;
-    }
-    private Button btn(String text){
-        Button b=new Button(this); b.setText(text); b.setTextSize(12); b.setAllCaps(false); b.setTextColor(Color.WHITE); b.setMinHeight(dp(42)); b.setPadding(dp(10),0,dp(10),0); return b;
+    private int dp(float value) {
+        return (int) (value * getResources().getDisplayMetrics().density + 0.5f);
     }
 
-    private void buildUi(){
-        root=new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL); root.setBackgroundColor(Color.rgb(11,15,20));
-        root.setPadding(dp(12),dp(8),dp(12),dp(8)); setContentView(root);
-        root.setOnApplyWindowInsetsListener((v,insets)->{ v.setPadding(dp(12), dp(8)+insets.getSystemWindowInsetTop()/2, dp(12), dp(8)+insets.getSystemWindowInsetBottom()/2); return insets; });
+    private TextView makeText(String text, float size, int color) {
+        TextView view = new TextView(this);
+        view.setText(text);
+        view.setTextSize(size);
+        view.setTextColor(color);
+        view.setGravity(Gravity.CENTER_VERTICAL);
+        return view;
+    }
 
-        LinearLayout top=new LinearLayout(this); top.setOrientation(LinearLayout.HORIZONTAL); top.setGravity(Gravity.CENTER_VERTICAL);
-        TextView brand=tv("JD Code Studio",21,Color.WHITE); brand.setTypeface(Typeface.DEFAULT_BOLD); top.addView(brand,new LinearLayout.LayoutParams(0,dp(48),1));
-        statusView=tv("READY",11,Color.rgb(83,212,154)); statusView.setTypeface(Typeface.DEFAULT_BOLD); top.addView(statusView,new LinearLayout.LayoutParams(dp(90),dp(48))); root.addView(top);
+    private Button makeButton(String text) {
+        Button button = new Button(this);
+        button.setText(text);
+        button.setTextSize(12);
+        button.setAllCaps(false);
+        button.setTextColor(Color.WHITE);
+        button.setMinHeight(dp(42));
+        button.setPadding(dp(8), 0, dp(8), 0);
+        return button;
+    }
 
-        LinearLayout controls=new LinearLayout(this); controls.setOrientation(LinearLayout.HORIZONTAL); controls.setGravity(Gravity.CENTER_VERTICAL); controls.setPadding(0,dp(3),0,dp(7));
-        languageSpinner=new Spinner(this); ArrayAdapter<String> ad=new ArrayAdapter<String>(this,android.R.layout.simple_spinner_dropdown_item,languages); languageSpinner.setAdapter(ad);
-        controls.addView(languageSpinner,new LinearLayout.LayoutParams(dp(118),dp(44)));
-        Button newBtn=btn("New"); Button openBtn=btn("Open"); Button saveBtn=btn("Save"); Button runBtn=btn("▶ Run");
-        controls.addView(newBtn,new LinearLayout.LayoutParams(0,dp(44),1)); controls.addView(openBtn,new LinearLayout.LayoutParams(0,dp(44),1)); controls.addView(saveBtn,new LinearLayout.LayoutParams(0,dp(44),1)); controls.addView(runBtn,new LinearLayout.LayoutParams(0,dp(44),1));
-        root.addView(controls);
+    private void buildUi() {
+        root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackgroundColor(Color.rgb(11, 15, 20));
+        root.setPadding(dp(12), dp(8), dp(12), dp(8));
+        setContentView(root);
 
-        LinearLayout nameRow=new LinearLayout(this); nameRow.setOrientation(LinearLayout.HORIZONTAL); nameRow.setBackgroundColor(Color.rgb(18,24,33)); nameRow.setPadding(dp(10),0,dp(10),0);
-        fileNameView=tv("main.php",13,Color.rgb(141,154,175)); nameRow.addView(fileNameView,new LinearLayout.LayoutParams(0,dp(40),1));
-        languageView=tv("PHP",12,Color.rgb(120,169,255)); nameRow.addView(languageView,new LinearLayout.LayoutParams(dp(82),dp(40))); root.addView(nameRow);
+        LinearLayout header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
 
-        editorRow=new LinearLayout(this); editorRow.setOrientation(LinearLayout.HORIZONTAL); editorRow.setBackgroundColor(Color.rgb(18,24,33));
-        lineNumbers=tv("1",12,Color.rgb(76,92,113)); lineNumbers.setTypeface(Typeface.MONOSPACE); lineNumbers.setGravity(Gravity.TOP|Gravity.RIGHT); lineNumbers.setPadding(dp(8),dp(12),dp(8),0);
-        editorRow.addView(lineNumbers,new LinearLayout.LayoutParams(dp(42),-1));
-        editor=new EditText(this); editor.setTextColor(Color.rgb(234,240,246)); editor.setHintTextColor(Color.rgb(90,105,125)); editor.setTextSize(14); editor.setTypeface(Typeface.MONOSPACE); editor.setGravity(Gravity.TOP|Gravity.START); editor.setPadding(dp(8),dp(10),dp(8),dp(20)); editor.setBackgroundColor(Color.rgb(18,24,33)); editor.setHint("Type your code here…"); editor.setHintTextColor(Color.rgb(82,98,120)); editor.setSingleLine(false); editor.setCursorVisible(true); editor.setHorizontallyScrolling(true); editor.setOverScrollMode(View.OVER_SCROLL_ALWAYS);
-        editorRow.addView(editor,new LinearLayout.LayoutParams(0,-1,1)); root.addView(editorRow,new LinearLayout.LayoutParams(-1,0,1.0f));
+        TextView title = makeText("JD Code Studio", 21, Color.WHITE);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        header.addView(title, new LinearLayout.LayoutParams(0, dp(48), 1));
 
-        outputPanel=new LinearLayout(this); outputPanel.setOrientation(LinearLayout.VERTICAL); outputPanel.setBackgroundColor(Color.rgb(13,18,25));
-        TextView outHead=tv("OUTPUT",11,Color.rgb(141,154,175)); outHead.setTypeface(Typeface.DEFAULT_BOLD); outHead.setPadding(dp(10),0,0,0); outputPanel.addView(outHead,new LinearLayout.LayoutParams(-1,dp(34)));
-        output=tv("Run a program to see output.",13,Color.rgb(234,240,246)); output.setTypeface(Typeface.MONOSPACE); output.setGravity(Gravity.TOP|Gravity.LEFT); output.setPadding(dp(10),dp(4),dp(10),dp(10));
-        ScrollView outScroll=new ScrollView(this); outScroll.addView(output); outputPanel.addView(outScroll,new LinearLayout.LayoutParams(-1,dp(150)));
-        root.addView(outputPanel,new LinearLayout.LayoutParams(-1,dp(184)));
+        statusView = makeText("READY", 11, Color.rgb(83, 212, 154));
+        statusView.setTypeface(Typeface.DEFAULT_BOLD);
+        statusView.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+        header.addView(statusView, new LinearLayout.LayoutParams(dp(130), dp(48)));
 
-        preview=new WebView(this); preview.setBackgroundColor(Color.WHITE); preview.getSettings().setJavaScriptEnabled(true); preview.getSettings().setDomStorageEnabled(true);
-        preview.setWebChromeClient(new WebChromeClient(){
-            @Override public boolean onConsoleMessage(ConsoleMessage cm){ output.setText("[JS] " + cm.message() + "\\n" + output.getText()); return true; }
+        root.addView(header);
+
+        LinearLayout toolbar = new LinearLayout(this);
+        toolbar.setOrientation(LinearLayout.HORIZONTAL);
+        toolbar.setGravity(Gravity.CENTER_VERTICAL);
+        toolbar.setPadding(0, dp(2), 0, dp(6));
+
+        languageSpinner = new Spinner(this);
+        ArrayAdapter<String> adapter = new ArrayAdapter<String>(
+                this,
+                android.R.layout.simple_spinner_dropdown_item,
+                languages
+        );
+        languageSpinner.setAdapter(adapter);
+        toolbar.addView(languageSpinner, new LinearLayout.LayoutParams(dp(112), dp(44)));
+
+        Button newButton = makeButton("New");
+        Button openButton = makeButton("Open");
+        Button saveButton = makeButton("Save");
+        Button runButton = makeButton("▶ Run");
+
+        toolbar.addView(newButton, new LinearLayout.LayoutParams(0, dp(44), 1));
+        toolbar.addView(openButton, new LinearLayout.LayoutParams(0, dp(44), 1));
+        toolbar.addView(saveButton, new LinearLayout.LayoutParams(0, dp(44), 1));
+        toolbar.addView(runButton, new LinearLayout.LayoutParams(0, dp(44), 1));
+
+        root.addView(toolbar);
+
+        LinearLayout fileBar = new LinearLayout(this);
+        fileBar.setOrientation(LinearLayout.HORIZONTAL);
+        fileBar.setGravity(Gravity.CENTER_VERTICAL);
+        fileBar.setBackgroundColor(Color.rgb(18, 24, 33));
+        fileBar.setPadding(dp(10), 0, dp(10), 0);
+
+        fileNameView = makeText("main.php", 13, Color.rgb(170, 183, 202));
+        fileNameView.setGravity(Gravity.CENTER_VERTICAL | Gravity.LEFT);
+        fileBar.addView(fileNameView, new LinearLayout.LayoutParams(0, dp(38), 1));
+
+        languageView = makeText("PHP", 12, Color.rgb(120, 169, 255));
+        languageView.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+        fileBar.addView(languageView, new LinearLayout.LayoutParams(dp(70), dp(38)));
+
+        root.addView(fileBar);
+
+        editorRow = new LinearLayout(this);
+        editorRow.setOrientation(LinearLayout.HORIZONTAL);
+        editorRow.setBackgroundColor(Color.rgb(18, 24, 33));
+
+        lineNumbers = makeText("1", 13, Color.rgb(80, 96, 117));
+        lineNumbers.setTypeface(Typeface.MONOSPACE);
+        lineNumbers.setGravity(Gravity.TOP | Gravity.RIGHT);
+        lineNumbers.setPadding(dp(8), dp(12), dp(8), 0);
+        editorRow.addView(lineNumbers, new LinearLayout.LayoutParams(dp(44), -1));
+
+        editor = new EditText(this);
+        editor.setTextColor(Color.rgb(234, 240, 246));
+        editor.setHintTextColor(Color.rgb(82, 98, 120));
+        editor.setTextSize(14);
+        editor.setTypeface(Typeface.MONOSPACE);
+        editor.setGravity(Gravity.TOP | Gravity.START);
+        editor.setPadding(dp(8), dp(10), dp(8), dp(16));
+        editor.setBackgroundColor(Color.rgb(18, 24, 33));
+        editor.setHint("Type your code here…");
+        editor.setSingleLine(false);
+        editor.setCursorVisible(true);
+        editor.setHorizontallyScrolling(true);
+        editor.setVerticalScrollBarEnabled(true);
+        editor.setHorizontalScrollBarEnabled(true);
+        editor.setOverScrollMode(View.OVER_SCROLL_ALWAYS);
+        editorRow.addView(editor, new LinearLayout.LayoutParams(0, -1, 1));
+
+        root.addView(editorRow, new LinearLayout.LayoutParams(-1, 0, 1));
+
+        outputPanel = new LinearLayout(this);
+        outputPanel.setOrientation(LinearLayout.VERTICAL);
+        outputPanel.setBackgroundColor(Color.rgb(13, 18, 25));
+
+        TextView outputHeader = makeText("OUTPUT", 11, Color.rgb(141, 154, 175));
+        outputHeader.setTypeface(Typeface.DEFAULT_BOLD);
+        outputHeader.setPadding(dp(10), 0, 0, 0);
+        outputPanel.addView(outputHeader, new LinearLayout.LayoutParams(-1, dp(32)));
+
+        output = makeText("Press ▶ Run to execute or preview this program.", 13, Color.rgb(234, 240, 246));
+        output.setTypeface(Typeface.MONOSPACE);
+        output.setGravity(Gravity.TOP | Gravity.LEFT);
+        output.setPadding(dp(10), dp(4), dp(10), dp(10));
+
+        ScrollView outputScroll = new ScrollView(this);
+        outputScroll.addView(output);
+        outputPanel.addView(outputScroll, new LinearLayout.LayoutParams(-1, dp(128)));
+
+        root.addView(outputPanel, new LinearLayout.LayoutParams(-1, dp(160)));
+
+        preview = new WebView(this);
+        preview.setBackgroundColor(Color.WHITE);
+        preview.getSettings().setJavaScriptEnabled(true);
+        preview.getSettings().setDomStorageEnabled(true);
+        preview.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public boolean onConsoleMessage(ConsoleMessage consoleMessage) {
+                output.setText("[JavaScript] " + consoleMessage.message());
+                return true;
+            }
         });
-        preview.setVisibility(View.GONE); root.addView(preview,new LinearLayout.LayoutParams(-1,0,0));
+        preview.setVisibility(View.GONE);
+        root.addView(preview, new LinearLayout.LayoutParams(-1, 0));
 
-        languageSpinner.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener(){
-            public void onNothingSelected(android.widget.AdapterView<?> p){}
-            public void onItemSelected(android.widget.AdapterView<?> p,View v,int pos,long id){ if(!suppressLanguageEvent) changeLanguage(languages[pos]); }
+        languageSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {
+            }
+
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                if (!suppressLanguageEvent) {
+                    changeLanguage(languages[position]);
+                }
+            }
         });
-        editor.addTextChangedListener(new TextWatcher(){
-            public void beforeTextChanged(CharSequence s,int st,int c,int a){}
-            public void onTextChanged(CharSequence s,int st,int before,int count){ if(!internalChange){ updateLineNumbers(); highlight(); statusView.setText("EDITING"); }}
-            public void afterTextChanged(Editable e){}
+
+        editor.addTextChangedListener(new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+            }
+
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+                if (!internalChange) {
+                    updateLineNumbers();
+                    statusView.setText("EDITING");
+                }
+            }
+
+            @Override
+            public void afterTextChanged(Editable s) {
+            }
         });
-        newBtn.setOnClickListener(v->newFile()); openBtn.setOnClickListener(v->openFile()); saveBtn.setOnClickListener(v->saveFile(false)); runBtn.setOnClickListener(v->runCurrent());
+
+        newButton.setOnClickListener(v -> newFile());
+        openButton.setOnClickListener(v -> openFile());
+        saveButton.setOnClickListener(v -> saveFile());
+        runButton.setOnClickListener(v -> runCurrent());
     }
 
-    private void updateLineNumbers(){ int n=Math.max(1, editor.getLineCount()); StringBuilder sb=new StringBuilder(); for(int i=1;i<=n;i++){ sb.append(i); if(i<n) sb.append('\n'); } lineNumbers.setText(sb.toString()); }
-    private void highlight(){
-        if(internalChange) return;
-        int colorText=Color.rgb(234,240,246); String code=editor.getText().toString(); SpannableStringBuilder s=new SpannableStringBuilder(code); s.setSpan(new ForegroundColorSpan(colorText),0,s.length(),0);
-        String lang=languageView.getText().toString();
-        String kws = lang.equals("Python") ? "\\b(and|as|assert|break|class|continue|def|elif|else|for|from|if|import|in|is|lambda|not|or|pass|print|return|True|False|while|with|yield)\\b" :
-                lang.equals("JavaScript") ? "\\b(const|let|var|function|return|if|else|for|while|class|new|true|false|null|undefined|console)\\b" :
-                lang.equals("PHP") ? "\\b(echo|if|else|elseif|while|for|foreach|function|return|true|false|null|array)\\b" :
-                lang.equals("Java") ? "\\b(public|private|protected|class|static|void|int|double|String|new|return|if|else|for|while|true|false|null)\\b" :
-                "\\b(int|char|float|double|void|return|if|else|for|while|class|public|private|static|include|SELECT|FROM|WHERE|INSERT|UPDATE|DELETE|CREATE|TABLE|echo)\\b";
-        applyRegex(s,kws,Color.rgb(120,169,255)); applyRegex(s,"(\\\"(?:\\\\\\.|[^\\\"])*\\\"|'(?:\\\\\\.|[^'])*')",Color.rgb(83,212,154));
-        if(lang.equals("PHP")) applyRegex(s,"\\$[A-Za-z_][A-Za-z0-9_]*",Color.rgb(255,190,92));
-        if(lang.equals("Python")||lang.equals("Bash")||lang.equals("C")||lang.equals("C++")) applyRegex(s,"#[^\\n]*|//[^\\n]*",Color.rgb(120,132,151));
-        else applyRegex(s,"//[^\\n]*|/\\*[\\s\\S]*?\\*/",Color.rgb(120,132,151));
-        internalChange=true; int pos=editor.getSelectionStart(); editor.setText(s); editor.setSelection(Math.min(pos,s.length())); internalChange=false;
-    }
-    private void applyRegex(SpannableStringBuilder s,String regex,int c){ try{ Matcher m=Pattern.compile(regex).matcher(s); while(m.find()) s.setSpan(new ForegroundColorSpan(c),m.start(),m.end(),0);}catch(Exception ignored){} }
-
-    private void changeLanguage(String lang){
-        languageView.setText(lang); String ext=extension(lang);
-        if(currentFile!=null){ currentFile=new File(currentFile.getParentFile(), baseName(currentFile.getName(), ext)); }
-        fileNameView.setText(currentFile==null ? "main."+ext : currentFile.getName());
-        internalChange=true; editor.setText(samples.get(lang)); internalChange=false; updateLineNumbers(); highlight(); statusView.setText("READY");
-    }
-    private String extension(String l){ switch(l){case"PHP":return"php";case"Python":return"py";case"JavaScript":return"js";case"HTML":return"html";case"CSS":return"css";case"C":return"c";case"C++":return"cpp";case"Java":return"java";case"SQL":return"sql";default:return"sh";} }
-    private String baseName(String name,String ext){ int p=name.lastIndexOf('.'); return (p>0?name.substring(0,p):name)+"."+ext; }
-
-    private void newFile(){
-        String lang=(String)languageSpinner.getSelectedItem(); String ext=extension(lang); currentFile=new File(getFilesDir(),"projects/default/main."+ext); writeText(currentFile,samples.get(lang)); loadFile(currentFile); statusView.setText("NEW FILE");
-    }
-    private void loadFile(File f){
-        currentFile=f; String c=readText(f); internalChange=true; editor.setText(c); internalChange=false; fileNameView.setText(f.getName()); updateLineNumbers();
-        String lang=languageForExt(f.getName()); int idx=Arrays.asList(languages).indexOf(lang);
-        if(idx>=0){ suppressLanguageEvent=true; languageSpinner.setSelection(idx,false); suppressLanguageEvent=false; languageView.setText(lang); }
-        highlight(); statusView.setText("READY");
-    }
-    private String languageForExt(String n){ String x=n.toLowerCase(Locale.US); if(x.endsWith(".php"))return"PHP"; if(x.endsWith(".py"))return"Python"; if(x.endsWith(".js"))return"JavaScript"; if(x.endsWith(".html")||x.endsWith(".htm"))return"HTML"; if(x.endsWith(".css"))return"CSS"; if(x.endsWith(".cpp")||x.endsWith(".cc")||x.endsWith(".cxx"))return"C++"; if(x.endsWith(".c"))return"C"; if(x.endsWith(".java"))return"Java"; if(x.endsWith(".sql"))return"SQL"; return"Bash"; }
-
-    private void openFile(){ Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT); i.setType("text/*"); i.addCategory(Intent.CATEGORY_OPENABLE); startActivityForResult(i,OPEN_FILE); }
-    private void saveFile(boolean choose){ if(currentFile==null || choose){ Intent i=new Intent(Intent.ACTION_CREATE_DOCUMENT); i.setType("text/plain"); i.putExtra(Intent.EXTRA_TITLE,fileNameView.getText().toString()); startActivityForResult(i,SAVE_FILE); return;} writeText(currentFile,editor.getText().toString()); statusView.setText("SAVED"); }
-    @Override protected void onActivityResult(int req,int res,Intent data){ super.onActivityResult(req,res,data); if(res!=RESULT_OK||data==null)return; Uri u=data.getData(); try{ String c=readUri(u); String name="main."+extension(languageForUri(u)); currentFile=new File(getFilesDir(),"projects/default/"+name); writeText(currentFile,c); loadFile(currentFile);}catch(Exception e){toast("Could not open file: "+e.getMessage());} }
-    private String languageForUri(Uri u){ String p=u.getPath()==null?"":u.getPath(); return languageForExt(p); }
-    private String readUri(Uri u)throws Exception{ InputStream in=getContentResolver().openInputStream(u); ByteArrayOutputStream b=new ByteArrayOutputStream(); byte[] buf=new byte[4096]; int n; while((n=in.read(buf))>0)b.write(buf,0,n); in.close(); return b.toString("UTF-8"); }
-
-    private void runCurrent(){
-        saveFile(false); String lang=(String)languageSpinner.getSelectedItem(); String code=editor.getText().toString(); statusView.setText("RUNNING"); output.setText("");
-        switch(lang){ case"HTML": runWeb(buildHtml(code)); break; case"CSS": runWeb("<html><head><style>"+escapeHtml(code)+"</style></head><body><h2 class='title'>CSS Preview</h2><div class='note'>Styles loaded successfully.</div></body></html>"); break; case"JavaScript": runJavaScript(code); break; case"SQL": runSql(code); break; default: runtimeNotice(lang); }
+    private void updateLineNumbers() {
+        int count = Math.max(1, editor.getLineCount());
+        StringBuilder numbers = new StringBuilder();
+        for (int i = 1; i <= count; i++) {
+            numbers.append(i);
+            if (i < count) {
+                numbers.append('\n');
+            }
+        }
+        lineNumbers.setText(numbers.toString());
     }
 
-    private void runWeb(String html){ preview.setVisibility(View.VISIBLE); preview.getLayoutParams().height=dp(210); outputPanel.getLayoutParams().height=dp(140); preview.requestLayout(); preview.loadDataWithBaseURL("https://localhost/",html,"text/html","UTF-8",null); output.setText("Web preview loaded."); statusView.setText("PREVIEW"); }
-    private String buildHtml(String h){ return h; }
-    private void runJavaScript(String code){ preview.setVisibility(View.VISIBLE); preview.getLayoutParams().height=dp(120); outputPanel.getLayoutParams().height=dp(230); preview.requestLayout(); String q=JSONObject.quote(code); String html="<html><body><pre id='out'></pre><script>const o=[]; const old=console.log; console.log=function(){o.push(Array.from(arguments).join(' ')); old.apply(console,arguments);}; try{eval("+q+");}catch(e){console.log('Error:',e.message)} document.getElementById('out').textContent=o.join('\\n');</script></body></html>"; preview.loadDataWithBaseURL(null,html,"text/html","UTF-8",null); statusView.setText("RUNNING"); }
-    private void runSql(String code){ try{ SQLiteDatabase db=SQLiteDatabase.create(null); StringBuilder out=new StringBuilder(); for(String raw:code.split(";")){ String stmt=raw.trim(); if(stmt.isEmpty())continue; String upper=stmt.toUpperCase(Locale.US); if(upper.startsWith("SELECT")||upper.startsWith("PRAGMA")||upper.startsWith("WITH")){ Cursor c=db.rawQuery(stmt,null); while(c.moveToNext()){ for(int i=0;i<c.getColumnCount();i++){ if(i>0)out.append(" | "); out.append(c.getString(i)); } out.append('\n'); } c.close(); } else { db.execSQL(stmt); out.append("OK: ").append(stmt.split("\\s+")[0]).append('\n'); } } db.close(); output.setText(out.length()==0?"SQL executed successfully.":out.toString()); statusView.setText("DONE"); } catch(Exception e){ output.setText("SQL Error: "+e.getMessage()); statusView.setText("ERROR"); } }
-    private void hidePreview(){ preview.setVisibility(View.GONE); preview.getLayoutParams().height=0; root.requestLayout(); }\n    private void runtimeNotice(String lang){ StringBuilder b=new StringBuilder(); b.append(lang).append(" runtime adapter is ready, but this APK's v1 build does not bundle the native ").append(lang).append(" toolchain.\n\n"); b.append("The IDE/editor, files, syntax highlighting and project workflow are available.\n\n"); b.append("For true offline execution, a signed runtime pack for ").append(lang).append(" must be installed on-device. This build deliberately does not pretend a simulator is the real language runtime."); output.setText(b.toString()); statusView.setText("RUNTIME NEEDED"); }
+    private void changeLanguage(String language) {
+        hidePreview();
+        languageView.setText(language);
 
-    private String escapeHtml(String s){ return s.replace("&","&amp;").replace("<","&lt;").replace(">","&gt;"); }
-    private String readText(File f){ try{ return new String(java.nio.file.Files.readAllBytes(f.toPath()),StandardCharsets.UTF_8);}catch(Exception e){return "";} }
-    private void writeText(File f,String s){ try{ File p=f.getParentFile(); if(p!=null)p.mkdirs(); java.nio.file.Files.write(f.toPath(),s.getBytes(StandardCharsets.UTF_8)); }catch(Exception e){ toast("Save failed: "+e.getMessage()); } }
-    private void toast(String s){ Toast.makeText(this,s,Toast.LENGTH_SHORT).show(); }
+        String extension = extension(language);
+        File dir = currentFile == null ? new File(getFilesDir(), "projects/default") : currentFile.getParentFile();
+        if (dir == null) {
+            dir = new File(getFilesDir(), "projects/default");
+        }
+        currentFile = new File(dir, "main." + extension);
+
+        if (currentFile.exists()) {
+            loadFile(currentFile);
+        } else {
+            setEditorText(samples.get(language));
+            fileNameView.setText(currentFile.getName());
+            statusView.setText("NEW " + language.toUpperCase(Locale.US));
+        }
+    }
+
+    private void setEditorText(String text) {
+        internalChange = true;
+        editor.setText(text == null ? "" : text);
+        editor.setSelection(editor.length());
+        internalChange = false;
+        updateLineNumbers();
+    }
+
+    private void newFile() {
+        String language = (String) languageSpinner.getSelectedItem();
+        currentFile = new File(getFilesDir(), "projects/default/main." + extension(language));
+        writeText(currentFile, samples.get(language));
+        loadFile(currentFile);
+        statusView.setText("NEW FILE");
+    }
+
+    private void loadFile(File file) {
+        currentFile = file;
+
+        String content = readText(file);
+        setEditorText(content);
+
+        fileNameView.setText(file.getName());
+
+        String language = languageForExtension(file.getName());
+        int index = Arrays.asList(languages).indexOf(language);
+        if (index >= 0) {
+            suppressLanguageEvent = true;
+            languageSpinner.setSelection(index, false);
+            suppressLanguageEvent = false;
+            languageView.setText(language);
+        }
+
+        hidePreview();
+        statusView.setText("READY");
+    }
+
+    private void openFile() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.setType("text/*");
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        startActivityForResult(intent, OPEN_FILE);
+    }
+
+    private void saveFile() {
+        if (currentFile == null) {
+            Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+            intent.setType("text/plain");
+            intent.putExtra(Intent.EXTRA_TITLE, "main.txt");
+            startActivityForResult(intent, SAVE_FILE);
+            return;
+        }
+
+        writeText(currentFile, editor.getText().toString());
+        statusView.setText("SAVED");
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (resultCode != RESULT_OK || data == null || data.getData() == null) {
+            return;
+        }
+
+        Uri uri = data.getData();
+
+        if (requestCode == SAVE_FILE) {
+            try {
+                String content = editor.getText().toString();
+                getContentResolver().openOutputStream(uri).write(content.getBytes(StandardCharsets.UTF_8));
+                statusView.setText("SAVED");
+            } catch (Exception e) {
+                toast("Save failed: " + e.getMessage());
+            }
+            return;
+        }
+
+        if (requestCode == OPEN_FILE) {
+            try {
+                String content = readUri(uri);
+                String name = extractFileName(uri);
+                String language = languageForExtension(name);
+
+                currentFile = new File(getFilesDir(), "projects/default/" + name);
+                writeText(currentFile, content);
+                loadFile(currentFile);
+
+                if (Arrays.asList(languages).contains(language)) {
+                    languageView.setText(language);
+                }
+            } catch (Exception e) {
+                toast("Could not open file: " + e.getMessage());
+            }
+        }
+    }
+
+    private String extractFileName(Uri uri) {
+        String path = uri.getPath();
+        if (path == null || path.trim().isEmpty()) {
+            return "main.txt";
+        }
+
+        int slash = path.lastIndexOf('/');
+        String name = slash >= 0 ? path.substring(slash + 1) : path;
+        if (name.contains(":")) {
+            name = name.substring(name.lastIndexOf(':') + 1);
+        }
+        return name.isEmpty() ? "main.txt" : name;
+    }
+
+    private String readUri(Uri uri) throws Exception {
+        InputStream input = getContentResolver().openInputStream(uri);
+        if (input == null) {
+            throw new IllegalStateException("No readable stream");
+        }
+
+        ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+        byte[] bytes = new byte[8192];
+        int read;
+        while ((read = input.read(bytes)) > 0) {
+            buffer.write(bytes, 0, read);
+        }
+        input.close();
+        return buffer.toString("UTF-8");
+    }
+
+    private void runCurrent() {
+        saveFile();
+
+        String language = (String) languageSpinner.getSelectedItem();
+        String code = editor.getText().toString();
+
+        hidePreview();
+        output.setText("");
+        statusView.setText("RUNNING");
+
+        switch (language) {
+            case "HTML":
+                runHtml(code);
+                break;
+            case "CSS":
+                runCss(code);
+                break;
+            case "JavaScript":
+                runJavaScript(code);
+                break;
+            case "SQL":
+                runSql(code);
+                break;
+            default:
+                runtimeNotice(language);
+                break;
+        }
+    }
+
+    private void runHtml(String html) {
+        showPreview(210, 110);
+        preview.loadDataWithBaseURL("https://localhost/", html, "text/html", "UTF-8", null);
+        output.setText("HTML preview loaded.");
+        statusView.setText("PREVIEW");
+    }
+
+    private void runCss(String css) {
+        String html = "<!doctype html><html><head><style>" +
+                escapeHtml(css) +
+                "</style></head><body><h2>CSS Preview</h2><div class='note'>" +
+                "Styles loaded successfully.</div></body></html>";
+
+        showPreview(210, 110);
+        preview.loadDataWithBaseURL("https://localhost/", html, "text/html", "UTF-8", null);
+        output.setText("CSS preview loaded.");
+        statusView.setText("PREVIEW");
+    }
+
+    private void runJavaScript(String code) {
+        String quoted = android.webkit.WebSettings.class.getName().isEmpty()
+                ? ""
+                : android.text.TextUtils.htmlEncode(code);
+
+        String html = "<!doctype html><html><body><pre id='out'></pre><script>" +
+                "const output=[];" +
+                "const originalLog=console.log;" +
+                "console.log=function(){const v=Array.from(arguments).join(' ');output.push(v);originalLog.apply(console,arguments);};" +
+                "try{eval(" + javascriptQuote(code) + ");document.getElementById('out').textContent=output.join('\\n');}" +
+                "catch(e){document.getElementById('out').textContent='Error: '+e.message;}" +
+                "</script></body></html>";
+
+        showPreview(140, 180);
+        preview.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null);
+        statusView.setText("RUNNING");
+    }
+
+    private void runSql(String code) {
+        SQLiteDatabase database = null;
+
+        try {
+            database = SQLiteDatabase.create(null);
+            StringBuilder result = new StringBuilder();
+
+            for (String raw : code.split(";")) {
+                String statement = raw.trim();
+                if (statement.isEmpty()) {
+                    continue;
+                }
+
+                String upper = statement.toUpperCase(Locale.US);
+
+                if (upper.startsWith("SELECT") ||
+                        upper.startsWith("PRAGMA") ||
+                        upper.startsWith("WITH")) {
+
+                    Cursor cursor = database.rawQuery(statement, null);
+                    while (cursor.moveToNext()) {
+                        for (int i = 0; i < cursor.getColumnCount(); i++) {
+                            if (i > 0) {
+                                result.append(" | ");
+                            }
+                            result.append(cursor.getString(i));
+                        }
+                        result.append('\n');
+                    }
+                    cursor.close();
+                } else {
+                    database.execSQL(statement);
+                    result.append("OK: ")
+                            .append(statement.split("\\s+")[0])
+                            .append('\n');
+                }
+            }
+
+            output.setText(result.length() == 0
+                    ? "SQL executed successfully."
+                    : result.toString());
+            statusView.setText("DONE");
+        } catch (Exception e) {
+            output.setText("SQL Error: " + e.getMessage());
+            statusView.setText("ERROR");
+        } finally {
+            if (database != null) {
+                database.close();
+            }
+        }
+    }
+
+    private void runtimeNotice(String language) {
+        output.setText(
+                language + " support is installed in the IDE, but this build does not bundle a native " +
+                language + " compiler/interpreter yet.\n\n" +
+                "The editor, project files and language-aware UI are ready.\n\n" +
+                "A real on-device runtime pack is required for true local execution."
+        );
+        statusView.setText("RUNTIME NEEDED");
+    }
+
+    private void showPreview(int previewHeight, int outputHeight) {
+        preview.setVisibility(View.VISIBLE);
+        preview.getLayoutParams().height = dp(previewHeight);
+        outputPanel.getLayoutParams().height = dp(outputHeight);
+        preview.requestLayout();
+        outputPanel.requestLayout();
+    }
+
+    private void hidePreview() {
+        if (preview != null) {
+            preview.setVisibility(View.GONE);
+            preview.getLayoutParams().height = 0;
+        }
+        if (outputPanel != null) {
+            outputPanel.getLayoutParams().height = dp(160);
+            outputPanel.requestLayout();
+        }
+    }
+
+    private String extension(String language) {
+        switch (language) {
+            case "PHP": return "php";
+            case "Python": return "py";
+            case "JavaScript": return "js";
+            case "HTML": return "html";
+            case "CSS": return "css";
+            case "C": return "c";
+            case "C++": return "cpp";
+            case "Java": return "java";
+            case "SQL": return "sql";
+            default: return "sh";
+        }
+    }
+
+    private String languageForExtension(String name) {
+        String lower = name.toLowerCase(Locale.US);
+        if (lower.endsWith(".php")) return "PHP";
+        if (lower.endsWith(".py")) return "Python";
+        if (lower.endsWith(".js")) return "JavaScript";
+        if (lower.endsWith(".html") || lower.endsWith(".htm")) return "HTML";
+        if (lower.endsWith(".css")) return "CSS";
+        if (lower.endsWith(".cpp") || lower.endsWith(".cc") || lower.endsWith(".cxx")) return "C++";
+        if (lower.endsWith(".c")) return "C";
+        if (lower.endsWith(".java")) return "Java";
+        if (lower.endsWith(".sql")) return "SQL";
+        return "Bash";
+    }
+
+    private String javascriptQuote(String value) {
+        return new org.json.JSONStringer().value(value).toString();
+    }
+
+    private String escapeHtml(String value) {
+        return value
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;");
+    }
+
+    private String readText(File file) {
+        try {
+            return new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    private void writeText(File file, String content) {
+        try {
+            File parent = file.getParentFile();
+            if (parent != null && !parent.exists()) {
+                parent.mkdirs();
+            }
+            Files.write(file.toPath(), content.getBytes(StandardCharsets.UTF_8));
+        } catch (Exception e) {
+            toast("Save failed: " + e.getMessage());
+        }
+    }
+
+    private void toast(String message) {
+        Toast.makeText(this, message, Toast.LENGTH_SHORT).show();
+    }
 }
