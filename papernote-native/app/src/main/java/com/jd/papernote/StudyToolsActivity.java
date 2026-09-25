@@ -91,6 +91,14 @@ public class StudyToolsActivity extends Activity {
         selectedInfo.setPadding(dp(2), 0, dp(2), dp(12));
         content.addView(selectedInfo);
 
+        LinearLayout aiCard = card();
+        aiCard.addView(text("PAPERNOTE AI TUTOR", 15, 0xFF182339, true));
+        aiCard.addView(text("Ask for an explanation, create a quiz, make flashcards, or turn your study markers into a revision prompt. The AI runs locally.", 12, 0xFF667085, false));
+        Button aiOpen = button("OPEN AI", true);
+        aiOpen.setOnClickListener(v -> openAiAssistant());
+        aiCard.addView(aiOpen, topMargin(dp(9), 0));
+        content.addView(aiCard, bottomMargin(dp(11)));
+
         content.addView(text("PAGE & REVISION", 11, 0xFF667085, true), bottomMargin(dp(7)));
         addFeature(content, "Study marks", "Pin doubts, mistakes, important ideas and revise targets on the exact spot.", "marks");
         addFeature(content, "Study inbox", "Open, resolve or reopen every study marker from this notebook.", "inbox");
@@ -121,6 +129,16 @@ public class StudyToolsActivity extends Activity {
         root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1f));
         setContentView(root);
         updateSelectedInfo();
+    }
+
+    private void openAiAssistant() {
+        NotebookStore.NotebookMeta n = selectedNotebook();
+        Intent intent = new Intent(this, AiAssistantActivity.class);
+        if (n != null) {
+            intent.putExtra("notebook_id", n.id);
+            intent.putExtra("page_index", 0);
+        }
+        startActivity(intent);
     }
 
     private void updateSelectedInfo() {
