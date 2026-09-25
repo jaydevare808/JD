@@ -39,7 +39,7 @@ public final class PaperCanvasView extends View {
     public static final int TOOL_TEXT = 6;
 
     private static final int MAX_UNDO_COMMANDS = 40;
-    private static final int MAX_POINTS_PER_STROKE = 4096;
+    private static final int MAX_POINTS_PER_STROKE = 8192;
     private static final float MIN_POINT_DISTANCE = 1.10f;
 
     public interface Listener {
@@ -241,6 +241,24 @@ public final class PaperCanvasView extends View {
         return inkBitmap;
     }
 
+    /**
+     * Releases page-sized native bitmaps while the editor is not visible.
+     * The next onStart/load will restore the page from disk.
+     */
+    public void releaseMemory() {
+        cancelLiveStroke();
+        releaseHistory();
+        if (inkBitmap != null && !inkBitmap.isRecycled()) {
+            inkBitmap.recycle();
+        }
+        if (baseBitmap != null && !baseBitmap.isRecycled()) {
+            baseBitmap.recycle();
+        }
+        inkBitmap = null;
+        baseBitmap = null;
+        postInvalidateOnAnimation();
+    }
+
     public Bitmap renderPageBitmap() {
         return renderPage(inkBitmap, paperType, marginEnabled);
     }
@@ -431,15 +449,7 @@ public final class PaperCanvasView extends View {
             configureStrokePaint(tool == TOOL_HIGHLIGHTER);
             canvas.drawPath(liveStroke, strokePaint);
 
-            if (liveStrokeMoved) {
-                canvas.drawLine(
-                        liveLastX,
-                        liveLastY,
-                        liveLastX,
-                        liveLastY,
-                        strokePaint
-                );
-            } else {
+            if (!liveStrokeMoved) {
                 canvas.drawPoint(liveLastX, liveLastY, strokePaint);
             }
         }
