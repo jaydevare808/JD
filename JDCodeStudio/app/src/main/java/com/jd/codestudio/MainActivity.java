@@ -550,10 +550,6 @@ public class MainActivity extends Activity {
     }
 
     private void runJavaScript(String code) {
-        String quoted = android.webkit.WebSettings.class.getName().isEmpty()
-                ? ""
-                : android.text.TextUtils.htmlEncode(code);
-
         String html = "<!doctype html><html><body><pre id='out'></pre><script>" +
                 "const output=[];" +
                 "const originalLog=console.log;" +
@@ -678,7 +674,30 @@ public class MainActivity extends Activity {
     }
 
     private String javascriptQuote(String value) {
-        return new org.json.JSONStringer().value(value).toString();
+        StringBuilder out = new StringBuilder(value.length() + 16);
+        out.append('"');
+        for (int i = 0; i < value.length(); i++) {
+            char ch = value.charAt(i);
+            switch (ch) {
+                case '\\': out.append("\\\\"); break;
+                case '"': out.append("\\\""); break;
+                case '\n': out.append("\\n"); break;
+                case '\r': out.append("\\r"); break;
+                case '\t': out.append("\\t"); break;
+                case '\b': out.append("\\b"); break;
+                case '\f': out.append("\\f"); break;
+                default:
+                    if (ch == 0x2028) {
+                        out.append("\\u2028");
+                    } else if (ch == 0x2029) {
+                        out.append("\\u2029");
+                    } else {
+                        out.append(ch);
+                    }
+            }
+        }
+        out.append('"');
+        return out.toString();
     }
 
     private String escapeHtml(String value) {
