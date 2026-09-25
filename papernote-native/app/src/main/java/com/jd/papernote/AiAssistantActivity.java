@@ -7,6 +7,7 @@ import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.Color;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.text.InputType;
 import android.view.Gravity;
@@ -194,7 +195,7 @@ public final class AiAssistantActivity extends Activity {
         LinearLayout.LayoutParams saveLp = new LinearLayout.LayoutParams(0, dp(42), 1f);
         saveLp.setMargins(dp(8), 0, 0, 0);
         answerActions.addView(savePage, saveLp);
-        answerCard.addView(answerActions, topMargin(dp(11)));
+        answerCard.addView(answerActions, topMargin(dp(11), 0));
         body.addView(answerCard, bottomMargin(dp(10)));
 
         TextView privacy = text(
