@@ -30,7 +30,7 @@ public final class NoteCanvasView extends View {
     public static final int TOOL_HIGHLIGHTER = 1;
     public static final int TOOL_ERASER = 2;
 
-    private static final int MAX_UNDO_COMMANDS = 20;
+    private static final int MAX_UNDO_COMMANDS = 16;
     private static final int MAX_POINTS_PER_STROKE = 2048;
     private static final float MIN_POINT_DISTANCE = 0.9f;
 
@@ -40,8 +40,10 @@ public final class NoteCanvasView extends View {
 
     private final Paint bitmapPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
     private final Paint strokePaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.DITHER_FLAG);
-    private final Paint backgroundPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint eraserPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.DITHER_FLAG);
+    private final Paint gridPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint marginPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint borderPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
     private final Deque<StrokeCommand> undo = new ArrayDeque<>();
     private final Deque<StrokeCommand> redo = new ArrayDeque<>();
@@ -50,11 +52,12 @@ public final class NoteCanvasView extends View {
 
     private Bitmap inkBitmap;
     private Bitmap baseBitmap;
+    private Canvas inkCanvas;
     private Listener listener;
 
     private int tool = TOOL_PEN;
-    private int inkColor = 0xFF182339;
-    private float penSize = 6.4f;
+    private int inkColor = 0xFF1B1838;
+    private float penSize = 6.0f;
     private String paperType = PAPER_RULED;
 
     private boolean drawing;
@@ -62,24 +65,35 @@ public final class NoteCanvasView extends View {
     private int activePointerId = -1;
     private float lastX;
     private float lastY;
-    private float[] pagePoint = new float[2];
+    private final float[] pagePoint = new float[2];
 
     private float baseScale = 1f;
     private final RectF pageRect = new RectF();
-    private long lastFrame;
+    private long lastFrame = 0L;
 
     public NoteCanvasView(Context context) {
         super(context);
         setFocusable(true);
         setClickable(true);
-        setBackgroundColor(0xFFDDE2E8);
+        setBackgroundColor(0xFFE4E7EC);
 
         strokePaint.setStyle(Paint.Style.STROKE);
         strokePaint.setStrokeCap(Paint.Cap.ROUND);
         strokePaint.setStrokeJoin(Paint.Join.ROUND);
 
-        marginPaint.setColor(0xFFE9A0AA);
+        eraserPaint.setStyle(Paint.Style.STROKE);
+        eraserPaint.setStrokeCap(Paint.Cap.ROUND);
+        eraserPaint.setStrokeJoin(Paint.Join.ROUND);
+        eraserPaint.setColor(Color.TRANSPARENT);
+        eraserPaint.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.CLEAR));
+
+        gridPaint.setStrokeWidth(1f);
+        marginPaint.setColor(0xFFE4A1AE);
         marginPaint.setStrokeWidth(2f);
+
+        borderPaint.setStyle(Paint.Style.STROKE);
+        borderPaint.setStrokeWidth(dp(1f));
+        borderPaint.setColor(0x22000000);
 
         setLayerType(View.LAYER_TYPE_HARDWARE, null);
     }
@@ -88,10 +102,14 @@ public final class NoteCanvasView extends View {
         this.listener = listener;
     }
 
+    public int getTool() {
+        return tool;
+    }
+
     public void setTool(int value) {
         if (value < TOOL_PEN || value > TOOL_ERASER) return;
+        if (drawing) cancelLiveStroke(true);
         tool = value;
-        cancelLiveStroke(false);
         invalidate();
     }
 
@@ -115,18 +133,14 @@ public final class NoteCanvasView extends View {
             inkBitmap = bitmap == null
                     ? Bitmap.createBitmap(PAGE_WIDTH, PAGE_HEIGHT, Bitmap.Config.ARGB_8888)
                     : bitmap;
-
             baseBitmap = inkBitmap.copy(Bitmap.Config.ARGB_8888, true);
-            if (baseBitmap == null) {
-                throw new OutOfMemoryError();
-            }
+            if (baseBitmap == null) throw new OutOfMemoryError();
+            inkCanvas = new Canvas(inkBitmap);
         } catch (OutOfMemoryError error) {
-            if (inkBitmap != null && inkBitmap != bitmap && !inkBitmap.isRecycled()) {
-                inkBitmap.recycle();
-            }
-            inkBitmap = bitmap;
+            releaseBitmaps();
+            inkBitmap = Bitmap.createBitmap(PAGE_WIDTH, PAGE_HEIGHT, Bitmap.Config.ARGB_8888);
             baseBitmap = null;
-            clearUndoHistory();
+            inkCanvas = new Canvas(inkBitmap);
         }
 
         invalidate();
@@ -136,9 +150,28 @@ public final class NoteCanvasView extends View {
         return inkBitmap;
     }
 
+    public Bitmap exportBitmap() {
+        if (inkBitmap == null || inkBitmap.isRecycled()) return null;
+
+        Bitmap output;
+        try {
+            output = Bitmap.createBitmap(PAGE_WIDTH, PAGE_HEIGHT, Bitmap.Config.ARGB_8888);
+        } catch (OutOfMemoryError error) {
+            return null;
+        }
+
+        Canvas canvas = new Canvas(output);
+        drawPaper(canvas);
+        canvas.drawBitmap(inkBitmap, 0f, 0f, bitmapPaint);
+        return output;
+    }
+
     public void clearUndoHistory() {
         undo.clear();
         redo.clear();
+        if (baseBitmap != null && !baseBitmap.isRecycled()) {
+            baseBitmap.recycle();
+        }
         baseBitmap = null;
     }
 
@@ -149,6 +182,7 @@ public final class NoteCanvasView extends View {
 
     public void undo() {
         if (undo.isEmpty() || inkBitmap == null || baseBitmap == null) return;
+
         redo.addLast(undo.removeLast());
         rebuild();
         dirty();
@@ -156,22 +190,25 @@ public final class NoteCanvasView extends View {
 
     public void redo() {
         if (redo.isEmpty() || inkBitmap == null) return;
+
         StrokeCommand command = redo.removeLast();
+        if (undo.size() >= MAX_UNDO_COMMANDS) undo.removeFirst();
         undo.addLast(command);
-        apply(command, new Canvas(inkBitmap));
+
+        apply(command, inkCanvas);
         dirty();
         invalidate();
     }
 
     private void execute(StrokeCommand command) {
-        if (inkBitmap == null) return;
+        if (inkBitmap == null || inkCanvas == null) return;
 
         if (undo.size() >= MAX_UNDO_COMMANDS) {
             undo.removeFirst();
         }
         undo.addLast(command);
         redo.clear();
-        apply(command, new Canvas(inkBitmap));
+        apply(command, inkCanvas);
         dirty();
         invalidate();
     }
@@ -188,10 +225,10 @@ public final class NoteCanvasView extends View {
 
         Bitmap old = inkBitmap;
         inkBitmap = rebuilt;
-        Canvas canvas = new Canvas(inkBitmap);
+        inkCanvas = new Canvas(inkBitmap);
 
         for (StrokeCommand command : undo) {
-            apply(command, canvas);
+            apply(command, inkCanvas);
         }
 
         if (old != null && !old.isRecycled() && old != baseBitmap) {
@@ -210,25 +247,29 @@ public final class NoteCanvasView extends View {
         redo.clear();
 
         if (inkBitmap != null && !inkBitmap.isRecycled()) inkBitmap.recycle();
-        if (baseBitmap != null && !baseBitmap.isRecycled()) baseBitmap.recycle();
+        if (baseBitmap != null && !baseBitmap.isRecycled() && baseBitmap != inkBitmap) {
+            baseBitmap.recycle();
+        }
 
         inkBitmap = null;
         baseBitmap = null;
+        inkCanvas = null;
     }
 
     @Override
     protected void onSizeChanged(int width, int height, int oldWidth, int oldHeight) {
         super.onSizeChanged(width, height, oldWidth, oldHeight);
-        float sx = Math.max(1f, width - dp(20)) / PAGE_WIDTH;
-        float sy = Math.max(1f, height - dp(20)) / PAGE_HEIGHT;
+        float sx = Math.max(1f, width - dp(20f)) / PAGE_WIDTH;
+        float sy = Math.max(1f, height - dp(20f)) / PAGE_HEIGHT;
         baseScale = Math.min(sx, sy);
+        updatePageRect();
     }
 
     @Override
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
         updatePageRect();
-        canvas.drawColor(0xFFDDE2E8);
+        canvas.drawColor(0xFFE4E7EC);
 
         canvas.save();
         canvas.clipRect(pageRect);
@@ -243,48 +284,43 @@ public final class NoteCanvasView extends View {
 
         if (drawing && tool != TOOL_ERASER) {
             strokePaint.setColor(inkColor);
-            strokePaint.setAlpha(tool == TOOL_HIGHLIGHTER ? 85 : 255);
+            strokePaint.setAlpha(tool == TOOL_HIGHLIGHTER ? 80 : 255);
             strokePaint.setStrokeWidth(tool == TOOL_HIGHLIGHTER ? penSize * 2.8f : penSize);
-            strokePaint.setStrokeCap(tool == TOOL_HIGHLIGHTER
-                    ? Paint.Cap.SQUARE : Paint.Cap.ROUND);
+            strokePaint.setStrokeCap(
+                    tool == TOOL_HIGHLIGHTER ? Paint.Cap.SQUARE : Paint.Cap.ROUND
+            );
             canvas.drawPath(livePath, strokePaint);
         }
 
         canvas.restore();
-
-        backgroundPaint.setStyle(Paint.Style.STROKE);
-        backgroundPaint.setStrokeWidth(dp(1));
-        backgroundPaint.setColor(0x33000000);
-        canvas.drawRect(pageRect, backgroundPaint);
-
+        canvas.drawRect(pageRect, borderPaint);
         lastFrame = SystemClock.uptimeMillis();
     }
 
     private void drawPaper(Canvas canvas) {
-        canvas.drawColor(0xFFFFFCF5);
-
-        Paint grid = new Paint(Paint.ANTI_ALIAS_FLAG);
-        grid.setStrokeWidth(1f);
-        grid.setColor(0xFFDDE2EA);
+        canvas.drawColor(0xFFFFFDF8);
+        gridPaint.setStrokeWidth(1f);
 
         if (PAPER_RULED.equals(paperType)) {
-            for (int y = 70; y < PAGE_HEIGHT; y += 48) {
-                canvas.drawLine(0, y, PAGE_WIDTH, y, grid);
+            gridPaint.setColor(0xFFDCE2EA);
+            for (int y = 68; y < PAGE_HEIGHT; y += 48) {
+                canvas.drawLine(0, y, PAGE_WIDTH, y, gridPaint);
             }
             canvas.drawLine(84, 0, 84, PAGE_HEIGHT, marginPaint);
         } else if (PAPER_GRAPH.equals(paperType)) {
+            gridPaint.setColor(0xFFE0E4EA);
             for (int x = 0; x <= PAGE_WIDTH; x += 32) {
-                canvas.drawLine(x, 0, x, PAGE_HEIGHT, grid);
+                canvas.drawLine(x, 0, x, PAGE_HEIGHT, gridPaint);
             }
             for (int y = 0; y <= PAGE_HEIGHT; y += 32) {
-                canvas.drawLine(0, y, PAGE_WIDTH, y, grid);
+                canvas.drawLine(0, y, PAGE_WIDTH, y, gridPaint);
             }
-            grid.setColor(0xFFC7CED9);
+            gridPaint.setColor(0xFFC9CFD8);
             for (int x = 0; x <= PAGE_WIDTH; x += 160) {
-                canvas.drawLine(x, 0, x, PAGE_HEIGHT, grid);
+                canvas.drawLine(x, 0, x, PAGE_HEIGHT, gridPaint);
             }
             for (int y = 0; y <= PAGE_HEIGHT; y += 160) {
-                canvas.drawLine(0, y, PAGE_WIDTH, y, grid);
+                canvas.drawLine(0, y, PAGE_WIDTH, y, gridPaint);
             }
         }
     }
@@ -293,17 +329,16 @@ public final class NoteCanvasView extends View {
     public boolean onTouchEvent(MotionEvent event) {
         switch (event.getActionMasked()) {
             case MotionEvent.ACTION_DOWN:
-                if (event.getPointerCount() != 1) {
-                    ignoredTouch = true;
-                    return true;
-                }
+                ignoredTouch = event.getPointerCount() != 1 || !isInsidePage(event.getX(), event.getY());
+                if (ignoredTouch) return true;
 
-                ignoredTouch = false;
                 activePointerId = event.getPointerId(0);
                 drawing = true;
-
                 toPage(event.getX(0), event.getY(0), pagePoint);
                 beginStroke(pagePoint[0], pagePoint[1]);
+                return true;
+
+            case MotionEvent.ACTION_POINTER_DOWN:
                 return true;
 
             case MotionEvent.ACTION_MOVE:
@@ -329,29 +364,39 @@ public final class NoteCanvasView extends View {
                 }
                 return true;
 
+            case MotionEvent.ACTION_POINTER_UP:
+                if (!ignoredTouch && activePointerId == event.getPointerId(event.getActionIndex())) {
+                    commitLiveStroke();
+                }
+                return true;
+
             case MotionEvent.ACTION_UP:
                 if (ignoredTouch) {
-                    ignoredTouch = false;
-                    activePointerId = -1;
-                    drawing = false;
+                    resetTouchState();
                     return true;
                 }
 
-                if (activePointerId >= 0 && event.getPointerCount() > 0) {
-                    toPage(event.getX(0), event.getY(0), pagePoint);
+                int upIndex = event.findPointerIndex(activePointerId);
+                if (upIndex >= 0) {
+                    toPage(event.getX(upIndex), event.getY(upIndex), pagePoint);
                     appendPoint(pagePoint[0], pagePoint[1]);
                 }
-
                 commitLiveStroke();
                 return true;
 
             case MotionEvent.ACTION_CANCEL:
+            case MotionEvent.ACTION_OUTSIDE:
                 cancelLiveStroke(true);
                 return true;
 
             default:
                 return true;
         }
+    }
+
+    private boolean isInsidePage(float x, float y) {
+        updatePageRect();
+        return pageRect.contains(x, y);
     }
 
     private void beginStroke(float x, float y) {
@@ -392,14 +437,9 @@ public final class NoteCanvasView extends View {
             livePath.lineTo(smoothedX, smoothedY);
         }
 
-        if (tool == TOOL_ERASER && inkBitmap != null) {
-            Paint eraser = new Paint(Paint.ANTI_ALIAS_FLAG);
-            eraser.setStyle(Paint.Style.STROKE);
-            eraser.setStrokeCap(Paint.Cap.ROUND);
-            eraser.setStrokeWidth(Math.max(12f, penSize * 3f));
-            eraser.setColor(Color.TRANSPARENT);
-            eraser.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.CLEAR));
-            new Canvas(inkBitmap).drawLine(lastX, lastY, smoothedX, smoothedY, eraser);
+        if (tool == TOOL_ERASER && inkCanvas != null) {
+            eraserPaint.setStrokeWidth(Math.max(12f, penSize * 3f));
+            inkCanvas.drawLine(lastX, lastY, smoothedX, smoothedY, eraserPaint);
         }
 
         lastX = smoothedX;
@@ -408,7 +448,8 @@ public final class NoteCanvasView extends View {
 
     private void commitLiveStroke() {
         if (!drawing || livePoints.isEmpty()) {
-            cancelLiveStroke(false);
+            resetTouchState();
+            postInvalidateOnAnimation();
             return;
         }
 
@@ -418,36 +459,32 @@ public final class NoteCanvasView extends View {
         }
 
         if (tool == TOOL_ERASER) {
-            StrokeCommand command = new StrokeCommand(points, inkColor, penSize, TOOL_ERASER, false);
             if (undo.size() >= MAX_UNDO_COMMANDS) undo.removeFirst();
-            undo.addLast(command);
+            undo.addLast(new StrokeCommand(points, inkColor, penSize, TOOL_ERASER, false));
             redo.clear();
             dirty();
             invalidate();
         } else {
-            execute(new StrokeCommand(
-                    points,
-                    inkColor,
-                    penSize,
-                    tool,
-                    false
-            ));
+            execute(new StrokeCommand(points, inkColor, penSize, tool, false));
         }
 
-        cancelLiveStroke(false);
+        resetTouchState();
     }
 
     private void cancelLiveStroke(boolean rebuild) {
+        resetTouchState();
+        if (rebuild && inkBitmap != null && baseBitmap != null) {
+            rebuild();
+        }
+        postInvalidateOnAnimation();
+    }
+
+    private void resetTouchState() {
         livePoints.clear();
         livePath.reset();
         drawing = false;
         activePointerId = -1;
         ignoredTouch = false;
-
-        if (rebuild && inkBitmap != null && baseBitmap != null) {
-            rebuild();
-        }
-        postInvalidateOnAnimation();
     }
 
     private void toPage(float screenX, float screenY, float[] out) {
@@ -474,18 +511,19 @@ public final class NoteCanvasView extends View {
         paint.setStyle(Paint.Style.STROKE);
         paint.setStrokeCap(Paint.Cap.ROUND);
         paint.setStrokeJoin(Paint.Join.ROUND);
-        paint.setStrokeWidth(command.tool == TOOL_HIGHLIGHTER
-                ? command.width * 2.8f
-                : command.tool == TOOL_ERASER
-                ? command.width * 3f
-                : command.width);
 
         if (command.tool == TOOL_ERASER) {
             paint.setColor(Color.TRANSPARENT);
             paint.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.CLEAR));
+            paint.setStrokeWidth(Math.max(12f, command.width * 3f));
         } else {
             paint.setColor(command.color);
-            paint.setAlpha(command.tool == TOOL_HIGHLIGHTER ? 85 : 255);
+            paint.setAlpha(command.tool == TOOL_HIGHLIGHTER ? 80 : 255);
+            paint.setStrokeWidth(
+                    command.tool == TOOL_HIGHLIGHTER
+                            ? command.width * 2.8f
+                            : command.width
+            );
             if (command.tool == TOOL_HIGHLIGHTER) {
                 paint.setStrokeCap(Paint.Cap.SQUARE);
             }
@@ -495,7 +533,12 @@ public final class NoteCanvasView extends View {
         if (command.points.size() == 1) {
             PointF point = command.points.get(0);
             paint.setStyle(Paint.Style.FILL);
-            canvas.drawCircle(point.x, point.y, Math.max(1f, paint.getStrokeWidth() * 0.5f), paint);
+            canvas.drawCircle(
+                    point.x,
+                    point.y,
+                    Math.max(1f, paint.getStrokeWidth() * 0.5f),
+                    paint
+            );
         } else {
             PointF first = command.points.get(0);
             path.moveTo(first.x, first.y);
