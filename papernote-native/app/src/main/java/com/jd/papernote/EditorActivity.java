@@ -807,6 +807,9 @@ public class EditorActivity extends Activity implements PaperCanvasView.Listener
             case "calculator": showCalculator(); break;
             case "timer": showFocusTimer(); break;
             case "checklist": showStudyChecklist(); break;
+            case "pdf_import":
+                choosePdf();
+                break;
             case "ai":
                 openAiAssistant();
                 break;
