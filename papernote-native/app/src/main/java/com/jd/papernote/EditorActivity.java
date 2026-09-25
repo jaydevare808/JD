@@ -104,6 +104,24 @@ public final class EditorActivity extends Activity implements PaperCanvasView.Li
     }
 
     @Override
+    protected void onStart() {
+        super.onStart();
+        if (canvasView != null
+                && (canvasView.getInkBitmap() == null || canvasView.getInkBitmap().isRecycled())) {
+            loadCurrentPage();
+        }
+    }
+
+    @Override
+    protected void onStop() {
+        if (!isFinishing() && currentNotebook != null && canvasView != null) {
+            saveCurrentPageNow();
+            canvasView.releaseMemory();
+        }
+        super.onStop();
+    }
+
+    @Override
     protected void onDestroy() {
         destroyed = true;
         mainHandler.removeCallbacksAndMessages(null);
