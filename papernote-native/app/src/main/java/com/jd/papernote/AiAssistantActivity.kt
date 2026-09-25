@@ -160,11 +160,13 @@ class AiAssistantActivity : Activity() {
 
         setContentView(root)
         addAssistantMessage(
-            "Hi. I am PaperNote AI.
+            """
+            Hi. I am PaperNote AI.
 
-I can help with explanations, quizzes, flashcards, study plans and exam-answer structure. I use the small language model bundled with this app and your local notebook metadata/study markers.
+            I can help with explanations, quizzes, flashcards, study plans and exam-answer structure. I use the small language model bundled with this app and your local notebook metadata/study markers.
 
-Important: I do not currently read the handwriting pixels on your page. For exact note content, paste or type it into the chat. Verify important academic facts."
+            Important: I do not currently read the handwriting pixels on your page. For exact note content, paste or type it into the chat. Verify important academic facts.
+            """.trimIndent()
         )
     }
 
