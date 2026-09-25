@@ -18,7 +18,6 @@ object LocalAiBridge {
         fun onError(message: String)
     }
 
-    private val lock = Any()
     private var activeJob: Job? = null
     private var activeModel: LlamaModel? = null
 
@@ -51,18 +50,16 @@ object LocalAiBridge {
                     throw IllegalStateException("Offline AI model is missing or incomplete.")
                 }
 
-                val model = synchronized(lock) {
-                    activeModel ?: Llama.loadModel(
-                        modelPath = modelFile.absolutePath,
-                        config = LlamaConfig(
-                            contextSize = 2048,
-                            threads = maxOf(2, minOf(Runtime.getRuntime().availableProcessors(), 6)),
-                            temperature = 0.35f,
-                            topP = 0.9f,
-                            topK = 40
-                        )
-                    ).also { activeModel = it }
-                }
+                val model = activeModel ?: Llama.loadModel(
+                    modelPath = modelFile.absolutePath,
+                    config = LlamaConfig(
+                        contextSize = 2048,
+                        threads = maxOf(2, minOf(Runtime.getRuntime().availableProcessors(), 6)),
+                        temperature = 0.35f,
+                        topP = 0.9f,
+                        topK = 40
+                    )
+                ).also { activeModel = it }
                 withContext(Dispatchers.Main) { callback.onReady() }
 
                 val result = Llama.complete(
