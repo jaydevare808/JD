@@ -52,14 +52,17 @@ object LocalAiBridge {
             return
         }
 
-        cancel()
-
-        synchronized(lock) {
+        val previousJob = synchronized(lock) {
+            val previous = activeJob
+            previous?.cancel()
             releaseWhenIdle = false
+            previous
         }
 
         val job = scope.launch(start = CoroutineStart.LAZY) {
             try {
+                // Never let two native inference calls share the same model at once.
+                previousJob?.join()
                 val modelFile = File(context.filesDir, "papernote-ai/PaperNote-AI.gguf")
                 prepareModel(context, modelFile)
 
