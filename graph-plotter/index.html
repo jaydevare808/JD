@@ -48,11 +48,11 @@
 <div id="modal" class="modal hide"><div class="modalbox"><div class="modalhead"><div><div class="kicker">DATA IMPORT</div><h3>Paste X,Y pairs</h3></div><button id="close" class="x">×</button></div><textarea id="pasteText" placeholder="0, 0\n1, 2\n2, 4\n3, 6"></textarea><div class="modalfoot"><span>Comma, space, tab or semicolon separated.</span><button id="import" class="primary">Import</button></div></div></div>
 <script>
 const W=1106,H=1536,COLS=16,ROWS=23,$=id=>document.getElementById(id);
-const canvas=$('graphCanvas'),ctx=canvas.getContext('2d'),viewport=$('canvasViewport'),wrap=$('canvasWrap'),overlay=$('calibrationOverlay');
+const canvas=$('canvas'),ctx=canvas.getContext('2d'),viewport=$('viewport'),wrap=$('paper'),overlay=$('handles');
 const cal={tl:{x:40,y:38},tr:{x:1007,y:38},br:{x:1007,y:1496},bl:{x:40,y:1496}};
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const state={origin:'auto',style:'bestfit',zoom:.7};
-const img=new Image();img.src='template.svg';
+const img=new Image();img.src='template.svg';img.addEventListener('error',()=>showMessage('Graph-paper template failed to load.',true));
 
 function fmt(n){return Math.abs(n)<1e-10?'0':Number(n.toFixed(6)).toString();}
 function parseRows(){
@@ -127,37 +127,37 @@ function render(){
       const a=map({x:x1,y:f.m*x1+f.b}),b=map({x:x2,y:f.m*x2+f.b});ctx.save();ctx.strokeStyle='#a32e27';ctx.lineWidth=3.4;ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();ctx.restore();
     }
     ctx.save();ctx.fillStyle='rgba(8,32,48,.9)';ctx.font='600 15px Arial';ctx.fillText('X scale '+fmt(xs)+' / square   Y scale '+fmt(ys)+' / square',58,58);if(f)ctx.fillText('Best fit: y = '+fmt(f.m)+'x '+(f.b>=0?'+':'−')+' '+fmt(Math.abs(f.b))+'   R² '+fmt(f.r2),58,80);ctx.restore();
-    $('statusText').textContent='Plotted '+d.length+' point'+(d.length===1?'':'s');$('statusText').style.color='var(--success)';
-    $('stats').innerHTML='<div class="stat"><b>'+d.length+'</b><span>readings</span></div><div class="stat"><b>'+o.x+', '+o.y+'</b><span>origin (major sq)</span></div>'+(f?'<div class="stat"><b>'+fmt(f.m)+'</b><span>slope</span></div><div class="stat"><b>'+fmt(f.r2)+'</b><span>R²</span></div>':'');
-    showMessage('');
-  }catch(e){$('statusText').textContent='Check input';$('statusText').style.color='var(--danger)';showMessage(e.message,true);}
+    $('slope').textContent=f?fmt(f.m):'—';$('intercept').textContent=f?fmt(f.b):'—';$('r2').textContent=f?fmt(f.r2):'—';$('npoints').textContent=String(d.length);
+    showMessage(d.length?'Plotted '+d.length+' point'+(d.length===1?'':'s'):'Ready');
+  }catch(e){showMessage(e.message,true);$('slope').textContent='—';$('intercept').textContent='—';$('r2').textContent='—';$('npoints').textContent='0';}
 }
 function showMessage(t,err){const n=$('msg');if(!n)return;n.textContent=t||(err?'Error':'Ready');n.style.color=err?'var(--danger)':'';}
 function rowsReindex(){document.querySelectorAll('#rows tr').forEach((tr,i)=>tr.querySelector('td').textContent=String(i+1).padStart(2,'0'));}
 function syncCal(){for(const k of ['tl','tr','br','bl']){$(k+'X').value=Math.round(cal[k].x);$(k+'Y').value=Math.round(cal[k].y);}}
 function readCal(){for(const k of ['tl','tr','br','bl']){cal[k].x=Number($(k+'X').value);cal[k].y=Number($(k+'Y').value);}}
-function placeHandles(){for(const k of ['tl','tr','br','bl']){const n=overlay.querySelector('[data-handle="'+k+'"]');if(n){n.style.left=cal[k].x+'px';n.style.top=cal[k].y+'px';}}}
+function placeHandles(){for(const k of ['tl','tr','br','bl']){const n=overlay.querySelector('[data-handle="'+k+'"]');if(n){n.style.left=(cal[k].x*state.zoom)+'px';n.style.top=(cal[k].y*state.zoom)+'px';}}}
 function setupRows(){const tbody=$('rows');tbody.querySelectorAll('input').forEach(i=>i.addEventListener('input',()=>{}));}
 document.querySelectorAll('.segment').forEach(b=>b.addEventListener('click',()=>{}));
 document.querySelectorAll('.tab').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.tabpanel').forEach(x=>x.classList.add('hide'));b.classList.add('active');$(b.dataset.tab+'Panel').classList.remove('hide');}));
 document.querySelectorAll('#rows input').forEach(i=>i.addEventListener('input',render));
-$('xScale').addEventListener('input',render);$('yScale').addEventListener('input',render);$('plotStyle').addEventListener('change',e=>{state.style=e.target.value;render()});$('pointSize').addEventListener('input',e=>{render()});
-document.querySelectorAll('.segment').forEach(()=>{});
-document.querySelectorAll('.segment').forEach(b=>{if(b.closest('.origin'))b.addEventListener('click',()=>{state.origin=b.dataset.origin;document.querySelectorAll('.origin button').forEach(x=>x.classList.remove('sel'));b.classList.add('sel');$('manual').classList.toggle('hide',state.origin!=='manual');render();});});
+$('xScale').addEventListener('input',render);$('yScale').addEventListener('input',render);document.querySelectorAll('.seg button[data-style]').forEach(b=>b.addEventListener('click',()=>{state.style=b.dataset.style;document.querySelectorAll('.seg button[data-style]').forEach(x=>x.classList.remove('sel'));b.classList.add('sel');render();}));$('pointSize').addEventListener('input',e=>{render()});
+document.querySelectorAll('.origin button[data-origin]').forEach(b=>b.addEventListener('click',()=>{state.origin=b.dataset.origin;document.querySelectorAll('.origin button').forEach(x=>x.classList.remove('sel'));b.classList.add('sel');$('manual').classList.toggle('hide',state.origin!=='manual');render();}));
 $('originX').addEventListener('input',render);$('originY').addEventListener('input',render);
 $('addRow').addEventListener('click',()=>{const tr=document.createElement('tr');tr.innerHTML='<td></td><td><input></td><td><input></td><td><button class="del">×</button></td>';tr.querySelectorAll('input').forEach(i=>i.addEventListener('input',render));tr.querySelector('.del').onclick=()=>{tr.remove();rowsReindex();render()};$('rows').appendChild(tr);rowsReindex();tr.querySelector('input').focus();});
 $('clearRows').addEventListener('click',()=>{if(!confirm('Clear all readings?'))return;$('rows').innerHTML='';render();});
 $('resetBtn').addEventListener('click',()=>location.reload());
-$('exportBtn').addEventListener('click',()=>{render();const a=document.createElement('a');a.download='graph-paper-plot.png';a.href=canvas.toDataURL('image/png');a.click();});
-$('printBtn').addEventListener('click',()=>{render();window.print();});
+$('export').addEventListener('click',()=>{render();const a=document.createElement('a');a.download='graph-paper-plot.png';a.href=canvas.toDataURL('image/png');a.click();});
+$('print').addEventListener('click',()=>{render();window.print();});
 $('pasteBtn').addEventListener('click',()=>{$('modal').classList.remove('hide');$('pasteText').focus()});$('close').addEventListener('click',()=>$('modal').classList.add('hide'));$('import').addEventListener('click',()=>{try{const out=[];for(const line of $('pasteText').value.trim().split(/\n+/).filter(Boolean)){const q=line.split(/[\s,;\t]+/).filter(Boolean);if(q.length<2)continue;const x=Number(q[0]),y=Number(q[1]);if(!Number.isFinite(x)||!Number.isFinite(y))throw Error('Invalid number in pasted data.');out.push([x,y]);}if(!out.length)throw Error('No valid X,Y pairs found.');$('rows').innerHTML='';for(const p of out){const tr=document.createElement('tr');tr.innerHTML='<td></td><td><input value="'+p[0]+'"></td><td><input value="'+p[1]+'"></td><td><button class="del">×</button></td>';$('rows').appendChild(tr);}rowsReindex();document.querySelectorAll('#rows input').forEach(i=>i.addEventListener('input',render));document.querySelectorAll('#rows .del').forEach(d=>d.onclick=()=>{d.closest('tr').remove();rowsReindex();render()});$('modal').classList.add('hide');$('pasteText').value='';render();}catch(e){showMessage(e.message,true);}});
-$('calibrateBtn').addEventListener('click',()=>{const edit=!overlay.classList.contains('edit');overlay.classList.toggle('hidden',!edit);overlay.classList.toggle('edit',edit);$('calibrateBtn').textContent=edit?'Done':'Edit corners';if(edit){placeHandles();}else{readCal();render();}});
+$('calBtn').addEventListener('click',()=>{const edit=overlay.classList.contains('hide');overlay.classList.toggle('hide',!edit);$('calBtn').textContent=edit?'Done':'Edit corners';if(edit){placeHandles();}else{readCal();render();}});
 for(const k of ['tl','tr','br','bl']){const n=overlay.querySelector('[data-handle="'+k+'"]');if(n){let drag=false;n.addEventListener('pointerdown',e=>{drag=true;n.setPointerCapture?.(e.pointerId);e.preventDefault()});n.addEventListener('pointermove',e=>{if(!drag)return;const r=wrap.getBoundingClientRect();cal[k].x=clamp((e.clientX-r.left)/state.zoom,0,W);cal[k].y=clamp((e.clientY-r.top)/state.zoom,0,H);syncCal();placeHandles();render();});n.addEventListener('pointerup',()=>drag=false);n.addEventListener('pointercancel',()=>drag=false);}}
-$('zoomIn').addEventListener('click',()=>setZoom(state.zoom+.1));$('zoomOut').addEventListener('click',()=>setZoom(state.zoom-.1));$('fitBtn').addEventListener('click',()=>fitToViewport());
+$('zoomIn').addEventListener('click',()=>setZoom(state.zoom+.1));$('zoomOut').addEventListener('click',()=>setZoom(state.zoom-.1));$('fit').addEventListener('click',()=>fitToViewport());
 function setZoom(z){state.zoom=clamp(z,.45,1.25);wrap.style.width=W*state.zoom+'px';wrap.style.height=H*state.zoom+'px';canvas.style.width=W*state.zoom+'px';canvas.style.height=H*state.zoom+'px';overlay.style.transform='scale('+state.zoom+')';overlay.style.transformOrigin='0 0';$('zoomLabel').textContent=Math.round(state.zoom*100)+'%';placeHandles();}
 function fitToViewport(){const p=42;setZoom(Math.min((viewport.clientWidth-p)/W,(viewport.clientHeight-p)/H,1));}
 img.addEventListener('load',()=>{syncCal();placeHandles();fitToViewport();render();});
 window.addEventListener('resize',()=>{if(state.zoom<=1)fitToViewport();});
+['tl','tr','br','bl'].forEach(k=>{const h=document.createElement('button');h.type='button';h.className='handle';h.dataset.handle=k;h.innerHTML='<span>'+k.toUpperCase()+'</span>';overlay.appendChild(h);});
+for(let i=0;i<4;i++){const tr=document.createElement('tr');tr.innerHTML='<td></td><td><input type="text"></td><td><input type="text"></td><td><button class="del" type="button">×</button></td>';tr.querySelectorAll('input').forEach(inp=>inp.addEventListener('input',render));tr.querySelector('.del').onclick=()=>{tr.remove();rowsReindex();render()};$('rows').appendChild(tr);}
 syncCal();setZoom(.7);setupRows();
 
 </script>
