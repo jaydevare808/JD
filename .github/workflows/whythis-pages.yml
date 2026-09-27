@@ -1,4 +1,4 @@
-name: Deploy WHYTHIS to GitHub Pages
+name: Deploy JD Pages
 
 on:
   push:
@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - 'whythis/**'
+      - 'graph-plotter/**'
       - '.github/workflows/whythis-pages.yml'
   workflow_dispatch:
 
@@ -27,12 +28,23 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
-      - name: Upload WHYTHIS artifact
+
+      - name: Assemble Pages site
+        run: |
+          rm -rf _site
+          mkdir -p _site
+          cp -R whythis/. _site/
+          mkdir -p _site/graph-plotter
+          cp -R graph-plotter/. _site/graph-plotter/
+
+      - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v4
         with:
-          path: './whythis'
+          path: './_site'
+
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
