@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#07111f" />
+  <title>GraphPaper Plotter</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark">∿</div>
+        <div>
+          <h1>GraphPaper Plotter</h1>
+          <p>Accurate X/Y readings on actual graph paper</p>
+        </div>
+      </div>
+      <div class="top-actions">
+        <button id="resetBtn" class="ghost-btn">Reset</button>
+        <button id="printBtn" class="ghost-btn">Print / Save PDF</button>
+        <button id="exportBtn" class="primary-btn">Export PNG</button>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <aside class="sidebar">
+        <section class="panel">
+          <div class="panel-title-row">
+            <div>
+              <h2>1. Enter readings</h2>
+              <p>Use the same order for X and Y.</p>
+            </div>
+            <span class="pill">CSV / lines</span>
+          </div>
+          <div class="two-col">
+            <label>
+              <span>X values</span>
+              <textarea id="xValues" spellcheck="false" placeholder="0, 1, 2, 3, 4"></textarea>
+            </label>
+            <label>
+              <span>Y values</span>
+              <textarea id="yValues" spellcheck="false" placeholder="0, 2, 4, 6, 8"></textarea>
+            </label>
+          </div>
+          <div class="helper">Paste comma-separated values, one per line, or values separated by spaces.</div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-title-row">
+            <div>
+              <h2>2. Set scale</h2>
+              <p>Scale = value represented by one major square.</p>
+            </div>
+          </div>
+          <div class="two-col inputs">
+            <label>
+              <span>X scale</span>
+              <div class="unit-input"><input id="xScale" type="number" step="any" value="1" /><em> / square</em></div>
+            </label>
+            <label>
+              <span>Y scale</span>
+              <div class="unit-input"><input id="yScale" type="number" step="any" value="1" /><em> / square</em></div>
+            </label>
+          </div>
+          <div class="two-col inputs compact-gap">
+            <label>
+              <span>Plot style</span>
+              <select id="plotStyle">
+                <option value="points">Points only</option>
+                <option value="joined">Join points</option>
+                <option value="bestfit" selected>Single best-fit line</option>
+              </select>
+            </label>
+            <label>
+              <span>Point size</span>
+              <input id="pointSize" type="number" min="1" max="12" step="1" value="4" />
+            </label>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-title-row">
+            <div>
+              <h2>3. Axis placement</h2>
+              <p>Axes snap to major graph-paper lines.</p>
+            </div>
+          </div>
+          <div class="segmented">
+            <button class="segment active" data-origin="auto">Auto-fit</button>
+            <button class="segment" data-origin="manual">Manual</button>
+          </div>
+          <div id="manualOrigin" class="two-col inputs manual-hidden">
+            <label>
+              <span>Y-axis from left</span>
+              <input id="originX" type="number" min="0" max="17" step="1" value="2" />
+            </label>
+            <label>
+              <span>X-axis from bottom</span>
+              <input id="originY" type="number" min="0" max="27" step="1" value="2" />
+            </label>
+          </div>
+          <div class="helper">The page has 17 major columns × 27 major rows. Auto-fit chooses integer grid positions so all readings stay on the sheet.</div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-title-row">
+            <div>
+              <h2>4. Paper calibration</h2>
+              <p>Fine-tune the four paper corners when using a scan or photo.</p>
+            </div>
+            <button id="calibrateBtn" class="small-btn">Edit corners</button>
+          </div>
+          <div id="calibrationFields" class="calibration-grid locked">
+            <div><span>TL</span><input id="tlX" type="number" value="40"/><input id="tlY" type="number" value="38"/></div>
+            <div><span>TR</span><input id="trX" type="number" value="1007"/><input id="trY" type="number" value="38"/></div>
+            <div><span>BR</span><input id="brX" type="number" value="1007"/><input id="brY" type="number" value="1497"/></div>
+            <div><span>BL</span><input id="blX" type="number" value="40"/><input id="blY" type="number" value="1497"/></div>
+          </div>
+          <div class="calibration-note">Coordinates use the 1106 × 1536 graph-paper canvas. The draggable editor lets you correct the paper boundary.</div>
+        </section>
+
+        <section class="panel compact">
+          <div class="status-row"><span>Graph status</span><strong id="statusText">Ready</strong></div>
+          <div id="stats" class="stats"></div>
+        </section>
+      </aside>
+
+      <section class="canvas-area">
+        <div class="canvas-toolbar">
+          <div class="toolbar-left">
+            <strong>Graph page</strong>
+            <span id="sizeText">1106 × 1536 px</span>
+          </div>
+          <div class="toolbar-right">
+            <button id="zoomOut" class="icon-btn" aria-label="Zoom out">−</button>
+            <span id="zoomText">100%</span>
+            <button id="zoomIn" class="icon-btn" aria-label="Zoom in">+</button>
+            <button id="fitBtn" class="icon-btn text-btn">Fit</button>
+          </div>
+        </div>
+        <div id="canvasViewport" class="canvas-viewport">
+          <div id="canvasWrap" class="canvas-wrap">
+            <canvas id="graphCanvas" width="1106" height="1536"></canvas>
+            <div id="calibrationOverlay" class="calibration-overlay hidden">
+              <div class="calibration-instruction">Drag the four points onto the outer graph-paper corners.</div>
+              <div class="handle" data-handle="tl"></div>
+              <div class="handle" data-handle="tr"></div>
+              <div class="handle" data-handle="br"></div>
+              <div class="handle" data-handle="bl"></div>
+            </div>
+          </div>
+        </div>
+        <div id="message" class="message hidden"></div>
+      </section>
+    </main>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>
