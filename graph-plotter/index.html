@@ -49,7 +49,7 @@
 <script>
 const W=1106,H=1536,COLS=16,ROWS=23,$=id=>document.getElementById(id);
 const canvas=$('graphCanvas'),ctx=canvas.getContext('2d'),viewport=$('canvasViewport'),wrap=$('canvasWrap'),overlay=$('calibrationOverlay');
-const cal={tl:{x:40,y:38},tr:{x:1007,y:60},br:{x:1021,y:1492},bl:{x:22,y:1474}};
+const cal={tl:{x:40,y:38},tr:{x:1007,y:38},br:{x:1007,y:1496},bl:{x:40,y:1496}};
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const state={origin:'auto',style:'bestfit',zoom:.7};
 const img=new Image();img.src='template.svg';
@@ -132,7 +132,7 @@ function render(){
     showMessage('');
   }catch(e){$('statusText').textContent='Check input';$('statusText').style.color='var(--danger)';showMessage(e.message,true);}
 }
-function showMessage(t,err){$('message').textContent=t||'';$('message').classList.toggle('hidden',!t);$('message').classList.toggle('error',!!err);}
+function showMessage(t,err){const n=$('msg');if(!n)return;n.textContent=t||(err?'Error':'Ready');n.style.color=err?'var(--danger)':'';}
 function rowsReindex(){document.querySelectorAll('#rows tr').forEach((tr,i)=>tr.querySelector('td').textContent=String(i+1).padStart(2,'0'));}
 function syncCal(){for(const k of ['tl','tr','br','bl']){$(k+'X').value=Math.round(cal[k].x);$(k+'Y').value=Math.round(cal[k].y);}}
 function readCal(){for(const k of ['tl','tr','br','bl']){cal[k].x=Number($(k+'X').value);cal[k].y=Number($(k+'Y').value);}}
