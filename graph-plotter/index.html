@@ -158,6 +158,7 @@ img.addEventListener('load',()=>{syncCal();placeHandles();fitToViewport();render
 window.addEventListener('resize',()=>{if(state.zoom<=1)fitToViewport();});
 ['tl','tr','br','bl'].forEach(k=>{const h=document.createElement('button');h.type='button';h.className='handle';h.dataset.handle=k;h.innerHTML='<span>'+k.toUpperCase()+'</span>';overlay.appendChild(h);});
 for(let i=0;i<4;i++){const tr=document.createElement('tr');tr.innerHTML='<td></td><td><input type="text"></td><td><input type="text"></td><td><button class="del" type="button">×</button></td>';tr.querySelectorAll('input').forEach(inp=>inp.addEventListener('input',render));tr.querySelector('.del').onclick=()=>{tr.remove();rowsReindex();render()};$('rows').appendChild(tr);}
+for(const k of ['tl','tr','br','bl']){const n=overlay.querySelector('[data-handle="'+k+'"]');if(n){n.onpointerdown=e=>{n._drag=1;n.setPointerCapture?.(e.pointerId);e.preventDefault()};n.onpointermove=e=>{if(!n._drag)return;const r=wrap.getBoundingClientRect();cal[k].x=clamp((e.clientX-r.left)/state.zoom,0,W);cal[k].y=clamp((e.clientY-r.top)/state.zoom,0,H);syncCal();placeHandles();render()};n.onpointerup=()=>n._drag=0;n.onpointercancel=()=>n._drag=0;}}
 syncCal();setZoom(.7);setupRows();
 
 </script>
