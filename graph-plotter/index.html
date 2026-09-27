@@ -47,37 +47,118 @@
 </div></div>
 <div id="modal" class="modal hide"><div class="modalbox"><div class="modalhead"><div><div class="kicker">DATA IMPORT</div><h3>Paste X,Y pairs</h3></div><button id="close" class="x">×</button></div><textarea id="pasteText" placeholder="0, 0\n1, 2\n2, 4\n3, 6"></textarea><div class="modalfoot"><span>Comma, space, tab or semicolon separated.</span><button id="import" class="primary">Import</button></div></div></div>
 <script>
-const W=1106,H=1536,COLS=17,ROWS=27,$=id=>document.getElementById(id),cal={tl:{x:40,y:38},tr:{x:1007,y:60},br:{x:1021,y:1492},bl:{x:22,y:1474}};
-const s={rows:[['',''],['',''],['',''],['',''],['','']],xs:1,ys:1,style:'bestfit',point:4,origin:'auto',ox:2,oy:2,zoom:.9,calibrating:false,src:'template.svg'};
-let img=null;
-const canvas=$('canvas'),ctx=canvas.getContext('2d');
-function fmt(n){return Math.abs(n)<1e-9?'0':Number(n.toFixed(6)).toString()}
-function nums(t){return String(t).trim().split(/[\s,;]+/).filter(Boolean).map(Number)}
-function hom(src,dst){let A=[],b=[];for(let i=0;i<4;i++){let[u,v]=src[i],[x,y]=dst[i];A.push([u,v,1,0,0,0,-u*x,-v*x]);b.push(x);A.push([0,0,0,u,v,1,-u*y,-v*y]);b.push(y)}for(let c=0;c<8;c++){let p=c;for(let r=c+1;r<8;r++)if(Math.abs(A[r][c])>Math.abs(A[p][c]))p=r;if(Math.abs(A[p][c])<1e-10)throw Error('Calibration is degenerate.');[A[c],A[p]]=[A[p],A[c]];[b[c],b[p]]=[b[p],b[c]];let d=A[c][c];for(let j=c;j<8;j++)A[c][j]/=d;b[c]/=d;for(let r=0;r<8;r++)if(r!==c){let f=A[r][c];for(let j=c;j<8;j++)A[r][j]-=f*A[c][j];b[r]-=f*b[c]}}return[...b,1]}
-function map(Hm,u,v){let d=Hm[6]*u+Hm[7]*v+1;return{x:(Hm[0]*u+Hm[1]*v+Hm[2])/d,y:(Hm[3]*u+Hm[4]*v+Hm[5])/d}}
-function data(){return s.rows.map(r=>({x:Number(r[0]),y:Number(r[1])})).filter(p=>Number.isFinite(p.x)&&Number.isFinite(p.y))}
-function fitLine(p){if(p.length<2)return null;let n=p.length,sx=0,sy=0,sxx=0,sxy=0;for(let q of p){sx+=q.x;sy+=q.y;sxx+=q.x*q.x;sxy+=q.x*q.y}let d=n*sxx-sx*sx;if(Math.abs(d)<1e-12)return null;let m=(n*sxy-sx*sy)/d,b=(sy-m*sx)/n,my=sy/n,tot=0,res=0;for(let q of p){tot+=(q.y-my)**2;res+=(q.y-(m*q.x+b))**2}return{m,b,r2:tot?1-res/tot:1}}
-function autoOrigin(p){if(!p.length)return{x:2,y:2};let mnx=Math.min(...p.map(q=>q.x/s.xs)),mxx=Math.max(...p.map(q=>q.x/s.xs)),mny=Math.min(...p.map(q=>q.y/s.ys)),mxy=Math.max(...p.map(q=>q.y/s.ys)),xs=[],ys=[];for(let x=0;x<=COLS;x++)if(x+mnx>=1&&x+mxx<=COLS-1)xs.push(x);for(let y=0;y<=ROWS;y++)if(y+mny>=1&&y+mxy<=ROWS-1)ys.push(y);if(!xs.length||!ys.length)return null;let tx=(COLS-mnx-mxx)/2,ty=(ROWS-mny-mxy)/2;return{x:xs.reduce((a,b)=>Math.abs(a-tx)<Math.abs(b-tx)?a:b),y:ys.reduce((a,b)=>Math.abs(a-ty)<Math.abs(b-ty)?a:b)}}
-function render(){if(!img)return;ctx.clearRect(0,0,W,H);ctx.drawImage(img,0,0,W,H);let d=data(),o=s.origin==='auto'?autoOrigin(d):{x:s.ox,y:s.oy};$('originReadout').querySelector('strong').textContent=o?o.x+', '+o.y:'Out of range';if(!o){$('msg').textContent='Scale does not fit the sheet.';return}$('msg').textContent='Ready';let hm=hom([[0,0],[1,0],[1,1],[0,1]],[cal.tl,cal.tr,cal.br,cal.bl]),P=p=>map(hm,(o.x+p.x/s.xs)/COLS,1-(o.y+p.y/s.ys)/ROWS),bounds={minX:-o.x*s.xs,maxX:(COLS-o.x)*s.xs,minY:-o.y*s.ys,maxY:(ROWS-o.y)*s.ys},L=P({x:bounds.minX,y:0}),R=P({x:bounds.maxX,y:0}),B=P({x:0,y:bounds.minY}),T=P({x:0,y:bounds.maxY});
-ctx.save();ctx.strokeStyle='rgba(8,46,70,.86)';ctx.fillStyle='rgba(8,46,70,.9)';ctx.lineWidth=2.2;ctx.beginPath();ctx.moveTo(L.x,L.y);ctx.lineTo(R.x,R.y);ctx.stroke();ctx.beginPath();ctx.moveTo(B.x,B.y);ctx.lineTo(T.x,T.y);ctx.stroke();ctx.beginPath();ctx.moveTo(R.x,R.y);ctx.lineTo(R.x-9,R.y-4);ctx.lineTo(R.x-9,R.y+4);ctx.closePath();ctx.fill();ctx.beginPath();ctx.moveTo(T.x,T.y);ctx.lineTo(T.x-4,T.y+9);ctx.lineTo(T.x+4,T.y+9);ctx.closePath();ctx.fill();ctx.restore();
-let pts=d.map(P);ctx.save();ctx.fillStyle='#0b6ea8';ctx.strokeStyle='#fff';ctx.lineWidth=1.4;pts.forEach(p=>{ctx.beginPath();ctx.arc(p.x,p.y,s.point,0,Math.PI*2);ctx.fill();ctx.stroke()});if(s.style==='joined'&&pts.length>1){ctx.strokeStyle='#0b6ea8';ctx.lineWidth=2.4;ctx.beginPath();pts.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.stroke()}ctx.restore();
-let f=fitLine(d);if(s.style==='bestfit'&&f){let a=bounds.minX,b=bounds.maxX;if(f.m!==0){let yy=d.map(q=>q.y),a1=(Math.min(...yy)-f.b)/f.m,b1=(Math.max(...yy)-f.b)/f.m;if(Number.isFinite(a1)&&Number.isFinite(b1)){a=Math.max(bounds.minX,Math.min(a1,b1));b=Math.min(bounds.maxX,Math.max(a1,b1))}}let p1=P({x:a,y:f.m*a+f.b}),p2=P({x:b,y:f.m*b+f.b});ctx.save();ctx.strokeStyle='#9d281f';ctx.lineWidth=3.1;ctx.beginPath();ctx.moveTo(p1.x,p1.y);ctx.lineTo(p2.x,p2.y);ctx.stroke();ctx.restore()}
-ctx.save();ctx.fillStyle='rgba(8,32,48,.9)';ctx.font='600 16px system-ui';ctx.fillText('X: '+fmt(s.xs)+' / square   Y: '+fmt(s.ys)+' / square',58,68);if(f){ctx.font='600 14px system-ui';ctx.fillText('Best fit  y = '+fmt(f.m)+'x '+(f.b>=0?'+':'−')+' '+fmt(Math.abs(f.b))+'     R² '+fmt(f.r2),58,92)}ctx.restore();
-$('slope').textContent=f?fmt(f.m):'—';$('intercept').textContent=f?fmt(f.b):'—';$('r2').textContent=f?fmt(f.r2):'—';$('npoints').textContent=d.length}
-function rowsUI(){let tb=$('rows');tb.innerHTML='';s.rows.forEach((r,i)=>{let tr=document.createElement('tr');tr.innerHTML='<td>'+String(i+1).padStart(2,'0')+'</td><td><input value="'+(r[0]??'')+'" data-i="'+i+'" data-k="0"></td><td><input value="'+(r[1]??'')+'" data-i="'+i+'" data-k="1"></td><td><button class="del" data-i="'+i+'">×</button></td>';tb.appendChild(tr)});tb.querySelectorAll('input').forEach(e=>e.oninput=()=>{s.rows[+e.dataset.i][+e.dataset.k]=e.value;render()});tb.querySelectorAll('.del').forEach(e=>e.onclick=()=>{if(s.rows.length>1){s.rows.splice(+e.dataset.i,1);rowsUI();render()}})}
-function setZoom(v){s.zoom=Math.max(.35,Math.min(1.5,v));$('paper').style.width=W*s.zoom+'px';$('paper').style.height=H*s.zoom+'px';canvas.style.width=W*s.zoom+'px';canvas.style.height=H*s.zoom+'px';$('handles').style.transform='scale('+s.zoom+')';$('handles').style.transformOrigin='0 0';$('zoomLabel').textContent=Math.round(s.zoom*100)+'%';placeHandles()}
-function syncCal(){for(let k of ['tl','tr','br','bl']){$(k+'x').value=Math.round(cal[k].x);$(k+'y').value=Math.round(cal[k].y)}}
-function readCal(){for(let k of ['tl','tr','br','bl']){cal[k].x=Number($(k+'x').value);cal[k].y=Number($(k+'y').value)}}
-function placeHandles(){document.querySelectorAll('.handle').forEach(e=>{let p=cal[e.dataset.k];e.style.left=p.x+'px';e.style.top=p.y+'px'})}
-function openHandles(){let box=$('handles');box.innerHTML='';for(let [k,l] of [['tl','TL'],['tr','TR'],['br','BR'],['bl','BL']]){let b=document.createElement('button');b.className='handle';b.dataset.k=k;b.innerHTML='<span>'+l+'</span>';box.appendChild(b);let drag=false;b.onpointerdown=e=>{drag=true;b.setPointerCapture?.(e.pointerId);e.preventDefault()};b.onpointermove=e=>{if(!drag)return;let r=$('paper').getBoundingClientRect();cal[k].x=Math.max(0,Math.min(W,(e.clientX-r.left)/s.zoom));cal[k].y=Math.max(0,Math.min(H,(e.clientY-r.top)/s.zoom));syncCal();placeHandles();render()};b.onpointerup=()=>drag=false;b.onpointercancel=()=>drag=false}placeHandles()}
-document.querySelectorAll('.nav-tab').forEach(()=>{});
-document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.tabpanel').forEach(x=>x.classList.add('hide'));b.classList.add('active');$(b.dataset.tab+'Panel').classList.remove('hide')});
-document.querySelectorAll('.seg button').forEach(b=>b.onclick=()=>{document.querySelectorAll('.seg button').forEach(x=>x.classList.remove('sel'));b.classList.add('sel');s.style=b.dataset.style;render()});
-document.querySelectorAll('.origin button').forEach(b=>b.onclick=()=>{document.querySelectorAll('.origin button').forEach(x=>x.classList.remove('sel'));b.classList.add('sel');s.origin=b.dataset.origin;$('manual').classList.toggle('hide',s.origin!=='manual');render()});
-$('addRow').onclick=()=>{s.rows.push(['','']);rowsUI()};$('clearRows').onclick=()=>{s.rows=[['',''],['',''],['',''],['',''],['','']];rowsUI();render()};$('xScale').oninput=e=>{s.xs=Number(e.target.value);render()};$('yScale').oninput=e=>{s.ys=Number(e.target.value);render()};$('originX').oninput=e=>{s.ox=Number(e.target.value);render()};$('originY').oninput=e=>{s.oy=Number(e.target.value);render()};$('pointSize').oninput=e=>{s.point=Number(e.target.value);$('psOut').textContent=s.point+' px';render()};$('zoomIn').onclick=()=>setZoom(s.zoom+.1);$('zoomOut').onclick=()=>setZoom(s.zoom-.1);$('fit').onclick=()=>setZoom(.9);
-$('export').onclick=()=>{render();let a=document.createElement('a');a.download='graph-paper-plot.png';a.href=canvas.toDataURL('image/png');a.click()};$('print').onclick=()=>{render();window.print()};$('resetBtn').onclick=()=>location.reload();
-$('pasteBtn').onclick=()=>{$('modal').classList.remove('hide');$('pasteText').focus()};$('close').onclick=()=>$('modal').classList.add('hide');$('import').onclick=()=>{try{let out=[];for(let line of $('pasteText').value.trim().split(/\n+/).filter(Boolean)){let v=nums(line);if(v.length<2)continue;if(!Number.isFinite(v[0])||!Number.isFinite(v[1]))throw Error('Invalid numeric value.');out.push([String(v[0]),String(v[1])])}if(!out.length)throw Error('No X,Y pairs found.');s.rows=out;rowsUI();$('modal').classList.add('hide');$('pasteText').value='';render()}catch(e){$('msg').textContent=e.message}};$('modal').onclick=e=>{if(e.target===$('modal'))$('modal').classList.add('hide')};
-$('choose').onclick=()=>$('imageInput').click();$('imageInput').onchange=e=>{let f=e.target.files?.[0];if(!f)return;s.src=URL.createObjectURL(f);cal.tl={x:20,y:20};cal.tr={x:W-20,y:20};cal.br={x:W-20,y:H-20};cal.bl={x:20,y:H-20};$('calBadge').textContent='New image';openHandles();$('handles').classList.remove('hide');s.calibrating=true;load()};$('calBtn').onclick=()=>{s.calibrating=!s.calibrating;$('handles').classList.toggle('hide',!s.calibrating);$('calBtn').textContent=s.calibrating?'Finish calibration':'Edit four corners';$('calBadge').textContent=s.calibrating?'Editing':'Custom';if(s.calibrating)openHandles();else{readCal();render()}};for(let k of ['tl','tr','br','bl'])for(let a of ['x','y'])$(k+a).oninput=()=>{readCal();placeHandles();render()};
-function load(){img=new Image();img.onload=()=>{rowsUI();syncCal();openHandles();setZoom(.9);render()};img.src=s.src}load();
+const W=1106,H=1536,COLS=16,ROWS=23,$=id=>document.getElementById(id);
+const canvas=$('graphCanvas'),ctx=canvas.getContext('2d'),viewport=$('canvasViewport'),wrap=$('canvasWrap'),overlay=$('calibrationOverlay');
+const cal={tl:{x:40,y:38},tr:{x:1007,y:60},br:{x:1021,y:1492},bl:{x:22,y:1474}};
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const state={origin:'auto',style:'bestfit',zoom:.7};
+const img=new Image();img.src='template.svg';
+
+function fmt(n){return Math.abs(n)<1e-10?'0':Number(n.toFixed(6)).toString();}
+function parseRows(){
+  const rows=[...document.querySelectorAll('#rows tr')],out=[];
+  for(let i=0;i<rows.length;i++){
+    const q=rows[i].querySelectorAll('input');if(q.length<2)continue;
+    const sx=q[0].value.trim(),sy=q[1].value.trim();
+    if(!sx&&!sy)continue;
+    if(!sx||!sy||!Number.isFinite(Number(sx))||!Number.isFinite(Number(sy)))throw Error('Row '+(i+1)+' must contain numeric X and Y values.');
+    out.push({x:Number(sx),y:Number(sy)});
+  }
+  return out;
+}
+function fitLine(d){
+  if(d.length<2)return null;let n=d.length,sx=0,sy=0,sxx=0,sxy=0;
+  for(const p of d){sx+=p.x;sy+=p.y;sxx+=p.x*p.x;sxy+=p.x*p.y;}
+  const den=n*sxx-sx*sx;if(Math.abs(den)<1e-14) return null;
+  const m=(n*sxy-sx*sy)/den,b=(sy-m*sx)/n,mean=sy/n;let tot=0,res=0;
+  for(const p of d){tot+=(p.y-mean)**2;res+=(p.y-(m*p.x+b))**2;}
+  return{m,b,r2:tot?1-res/tot:1};
+}
+function hom(src,dst){
+  const A=[],b=[];
+  for(let i=0;i<4;i++){const[u,v]=src[i],[x,y]=dst[i];
+    A.push([u,v,1,0,0,0,-u*x,-v*x]);b.push(x);
+    A.push([0,0,0,u,v,1,-u*y,-v*y]);b.push(y);
+  }
+  for(let c=0;c<8;c++){let p=c;for(let r=c+1;r<8;r++)if(Math.abs(A[r][c])>Math.abs(A[p][c]))p=r;
+    if(Math.abs(A[p][c])<1e-11)throw Error('Corner calibration is invalid.');
+    [A[c],A[p]]=[A[p],A[c]];[b[c],b[p]]=[b[p],b[c]];
+    const z=A[c][c];for(let j=c;j<8;j++)A[c][j]/=z;b[c]/=z;
+    for(let r=0;r<8;r++)if(r!==c){const f=A[r][c];if(!f)continue;for(let j=c;j<8;j++)A[r][j]-=f*A[c][j];b[r]-=f*b[c];}
+  }return[...b,1];
+}
+function mapH(h,u,v){const d=h[6]*u+h[7]*v+1;return{x:(h[0]*u+h[1]*v+h[2])/d,y:(h[3]*u+h[4]*v+h[5])/d};}
+function chooseOrigin(d,xs,ys){
+  if(state.origin==='manual')return{x:Number($('originX').value),y:Number($('originY').value)};
+  if(state.origin==='corner')return{x:0,y:0};
+  if(!d.length)return{x:1,y:1};
+  const minX=Math.min(...d.map(p=>p.x/xs)),maxX=Math.max(...d.map(p=>p.x/xs)),minY=Math.min(...d.map(p=>p.y/ys)),maxY=Math.max(...d.map(p=>p.y/ys));
+  if(minX>=0&&maxX<=COLS-1&&minY>=0&&maxY<=ROWS-1)return{x:1,y:1};
+  const ox=[];const oy=[];
+  for(let x=0;x<=COLS;x++)if(x+minX>=0&&x+maxX<=COLS)ox.push(x);
+  for(let y=0;y<=ROWS;y++)if(y+minY>=0&&y+maxY<=ROWS)oy.push(y);
+  if(!ox.length||!oy.length)return null;
+  const tx=(COLS-minX-maxX)/2,ty=(ROWS-minY-maxY)/2;
+  return{x:ox.reduce((a,b)=>Math.abs(a-tx)<Math.abs(b-tx)?a:b),y:oy.reduce((a,b)=>Math.abs(a-ty)<Math.abs(b-ty)?a:b)};
+}
+function mapper(origin,xs,ys){
+  const h=hom([[0,0],[1,0],[1,1],[0,1]],[cal.tl,cal.tr,cal.br,cal.bl]);
+  return p=>mapH(h,(origin.x+p.x/xs)/COLS,1-(origin.y+p.y/ys)/ROWS);
+}
+function drawArrow(x1,y1,x2,y2){const a=Math.atan2(y2-y1,x2-x1),s=9;ctx.beginPath();ctx.moveTo(x2,y2);ctx.lineTo(x2-s*Math.cos(a-.45),y2-s*Math.sin(a-.45));ctx.lineTo(x2-s*Math.cos(a+.45),y2-s*Math.sin(a+.45));ctx.closePath();ctx.fill();}
+function render(){
+  if(!img.complete)return;
+  try{
+    const xs=Number($('xScale').value),ys=Number($('yScale').value);
+    if(!Number.isFinite(xs)||!Number.isFinite(ys)||xs===0||ys===0)throw Error('Scale values must be non-zero numbers.');
+    const d=parseRows(),o=chooseOrigin(d,xs,ys);if(!o)throw Error('The selected scale does not fit the graph sheet. Use Auto-fit or reduce the scale.');
+    if(o.x<0||o.x>COLS||o.y<0||o.y>ROWS)throw Error('Origin must lie on the graph-paper field.');
+    const map=mapper(o,xs,ys),bounds={minX:-o.x*xs,maxX:(COLS-o.x)*xs,minY:-o.y*ys,maxY:(ROWS-o.y)*ys};
+    ctx.clearRect(0,0,W,H);ctx.drawImage(img,0,0,W,H);
+    const L=map({x:bounds.minX,y:0}),R=map({x:bounds.maxX,y:0}),B=map({x:0,y:bounds.minY}),T=map({x:0,y:bounds.maxY});
+    ctx.save();ctx.strokeStyle='rgba(7,39,55,.9)';ctx.fillStyle='rgba(7,39,55,.92)';ctx.lineWidth=2.6;
+    ctx.beginPath();ctx.moveTo(L.x,L.y);ctx.lineTo(R.x,R.y);ctx.stroke();ctx.beginPath();ctx.moveTo(B.x,B.y);ctx.lineTo(T.x,T.y);ctx.stroke();drawArrow(L.x,L.y,R.x,R.y);drawArrow(B.x,B.y,T.x,T.y);ctx.restore();
+    const pts=d.map(map);ctx.save();ctx.fillStyle='#0a6c9f';ctx.strokeStyle='#fff';ctx.lineWidth=2;
+    pts.forEach((p,i)=>{ctx.beginPath();ctx.arc(p.x,p.y,Number($('pointSize').value),0,Math.PI*2);ctx.fill();ctx.stroke();ctx.fillStyle='#173744';ctx.font='600 10px Arial';ctx.fillText(String(i+1),p.x+8,p.y-7);ctx.fillStyle='#0a6c9f';});
+    if(state.style==='joined'&&pts.length>1){ctx.strokeStyle='#0a6c9f';ctx.lineWidth=2.8;ctx.beginPath();pts.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.stroke()}ctx.restore();
+    const f=fitLine(d);if(state.style==='bestfit'&&f){
+      let x1=bounds.minX,x2=bounds.maxX;
+      if(Math.abs(f.m)>1e-14){const ya=Math.min(...d.map(p=>p.y)),yb=Math.max(...d.map(p=>p.y));const a=(ya-f.b)/f.m,b=(yb-f.b)/f.m;if(Number.isFinite(a)&&Number.isFinite(b)){x1=Math.max(bounds.minX,Math.min(a,b));x2=Math.min(bounds.maxX,Math.max(a,b));}}
+      const a=map({x:x1,y:f.m*x1+f.b}),b=map({x:x2,y:f.m*x2+f.b});ctx.save();ctx.strokeStyle='#a32e27';ctx.lineWidth=3.4;ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();ctx.restore();
+    }
+    ctx.save();ctx.fillStyle='rgba(8,32,48,.9)';ctx.font='600 15px Arial';ctx.fillText('X scale '+fmt(xs)+' / square   Y scale '+fmt(ys)+' / square',58,58);if(f)ctx.fillText('Best fit: y = '+fmt(f.m)+'x '+(f.b>=0?'+':'−')+' '+fmt(Math.abs(f.b))+'   R² '+fmt(f.r2),58,80);ctx.restore();
+    $('statusText').textContent='Plotted '+d.length+' point'+(d.length===1?'':'s');$('statusText').style.color='var(--success)';
+    $('stats').innerHTML='<div class="stat"><b>'+d.length+'</b><span>readings</span></div><div class="stat"><b>'+o.x+', '+o.y+'</b><span>origin (major sq)</span></div>'+(f?'<div class="stat"><b>'+fmt(f.m)+'</b><span>slope</span></div><div class="stat"><b>'+fmt(f.r2)+'</b><span>R²</span></div>':'');
+    showMessage('');
+  }catch(e){$('statusText').textContent='Check input';$('statusText').style.color='var(--danger)';showMessage(e.message,true);}
+}
+function showMessage(t,err){$('message').textContent=t||'';$('message').classList.toggle('hidden',!t);$('message').classList.toggle('error',!!err);}
+function rowsReindex(){document.querySelectorAll('#rows tr').forEach((tr,i)=>tr.querySelector('td').textContent=String(i+1).padStart(2,'0'));}
+function syncCal(){for(const k of ['tl','tr','br','bl']){$(k+'X').value=Math.round(cal[k].x);$(k+'Y').value=Math.round(cal[k].y);}}
+function readCal(){for(const k of ['tl','tr','br','bl']){cal[k].x=Number($(k+'X').value);cal[k].y=Number($(k+'Y').value);}}
+function placeHandles(){for(const k of ['tl','tr','br','bl']){const n=overlay.querySelector('[data-handle="'+k+'"]');if(n){n.style.left=cal[k].x+'px';n.style.top=cal[k].y+'px';}}}
+function setupRows(){const tbody=$('rows');tbody.querySelectorAll('input').forEach(i=>i.addEventListener('input',()=>{}));}
+document.querySelectorAll('.segment').forEach(b=>b.addEventListener('click',()=>{}));
+document.querySelectorAll('.tab').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.tabpanel').forEach(x=>x.classList.add('hide'));b.classList.add('active');$(b.dataset.tab+'Panel').classList.remove('hide');}));
+document.querySelectorAll('#rows input').forEach(i=>i.addEventListener('input',render));
+$('xScale').addEventListener('input',render);$('yScale').addEventListener('input',render);$('plotStyle').addEventListener('change',e=>{state.style=e.target.value;render()});$('pointSize').addEventListener('input',e=>{render()});
+document.querySelectorAll('.segment').forEach(()=>{});
+document.querySelectorAll('.segment').forEach(b=>{if(b.closest('.origin'))b.addEventListener('click',()=>{state.origin=b.dataset.origin;document.querySelectorAll('.origin button').forEach(x=>x.classList.remove('sel'));b.classList.add('sel');$('manual').classList.toggle('hide',state.origin!=='manual');render();});});
+$('originX').addEventListener('input',render);$('originY').addEventListener('input',render);
+$('addRow').addEventListener('click',()=>{const tr=document.createElement('tr');tr.innerHTML='<td></td><td><input></td><td><input></td><td><button class="del">×</button></td>';tr.querySelectorAll('input').forEach(i=>i.addEventListener('input',render));tr.querySelector('.del').onclick=()=>{tr.remove();rowsReindex();render()};$('rows').appendChild(tr);rowsReindex();tr.querySelector('input').focus();});
+$('clearRows').addEventListener('click',()=>{if(!confirm('Clear all readings?'))return;$('rows').innerHTML='';render();});
+$('resetBtn').addEventListener('click',()=>location.reload());
+$('exportBtn').addEventListener('click',()=>{render();const a=document.createElement('a');a.download='graph-paper-plot.png';a.href=canvas.toDataURL('image/png');a.click();});
+$('printBtn').addEventListener('click',()=>{render();window.print();});
+$('pasteBtn').addEventListener('click',()=>{$('modal').classList.remove('hide');$('pasteText').focus()});$('close').addEventListener('click',()=>$('modal').classList.add('hide'));$('import').addEventListener('click',()=>{try{const out=[];for(const line of $('pasteText').value.trim().split(/\n+/).filter(Boolean)){const q=line.split(/[\s,;\t]+/).filter(Boolean);if(q.length<2)continue;const x=Number(q[0]),y=Number(q[1]);if(!Number.isFinite(x)||!Number.isFinite(y))throw Error('Invalid number in pasted data.');out.push([x,y]);}if(!out.length)throw Error('No valid X,Y pairs found.');$('rows').innerHTML='';for(const p of out){const tr=document.createElement('tr');tr.innerHTML='<td></td><td><input value="'+p[0]+'"></td><td><input value="'+p[1]+'"></td><td><button class="del">×</button></td>';$('rows').appendChild(tr);}rowsReindex();document.querySelectorAll('#rows input').forEach(i=>i.addEventListener('input',render));document.querySelectorAll('#rows .del').forEach(d=>d.onclick=()=>{d.closest('tr').remove();rowsReindex();render()});$('modal').classList.add('hide');$('pasteText').value='';render();}catch(e){showMessage(e.message,true);}});
+$('calibrateBtn').addEventListener('click',()=>{const edit=!overlay.classList.contains('edit');overlay.classList.toggle('hidden',!edit);overlay.classList.toggle('edit',edit);$('calibrateBtn').textContent=edit?'Done':'Edit corners';if(edit){placeHandles();}else{readCal();render();}});
+for(const k of ['tl','tr','br','bl']){const n=overlay.querySelector('[data-handle="'+k+'"]');if(n){let drag=false;n.addEventListener('pointerdown',e=>{drag=true;n.setPointerCapture?.(e.pointerId);e.preventDefault()});n.addEventListener('pointermove',e=>{if(!drag)return;const r=wrap.getBoundingClientRect();cal[k].x=clamp((e.clientX-r.left)/state.zoom,0,W);cal[k].y=clamp((e.clientY-r.top)/state.zoom,0,H);syncCal();placeHandles();render();});n.addEventListener('pointerup',()=>drag=false);n.addEventListener('pointercancel',()=>drag=false);}}
+$('zoomIn').addEventListener('click',()=>setZoom(state.zoom+.1));$('zoomOut').addEventListener('click',()=>setZoom(state.zoom-.1));$('fitBtn').addEventListener('click',()=>fitToViewport());
+function setZoom(z){state.zoom=clamp(z,.45,1.25);wrap.style.width=W*state.zoom+'px';wrap.style.height=H*state.zoom+'px';canvas.style.width=W*state.zoom+'px';canvas.style.height=H*state.zoom+'px';overlay.style.transform='scale('+state.zoom+')';overlay.style.transformOrigin='0 0';$('zoomLabel').textContent=Math.round(state.zoom*100)+'%';placeHandles();}
+function fitToViewport(){const p=42;setZoom(Math.min((viewport.clientWidth-p)/W,(viewport.clientHeight-p)/H,1));}
+img.addEventListener('load',()=>{syncCal();placeHandles();fitToViewport();render();});
+window.addEventListener('resize',()=>{if(state.zoom<=1)fitToViewport();});
+syncCal();setZoom(.7);setupRows();
+
 </script>
 </body></html>
