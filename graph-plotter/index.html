@@ -50,6 +50,7 @@
 const W=1106,H=1536,COLS=16,ROWS=23,$=id=>document.getElementById(id);
 const canvas=$('canvas'),ctx=canvas.getContext('2d'),viewport=$('viewport'),wrap=$('paper'),overlay=$('handles');
 const cal={tl:{x:40,y:38},tr:{x:1007,y:38},br:{x:1007,y:1496},bl:{x:40,y:1496}};
+let paperImage=null;
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const state={origin:'auto',style:'bestfit',zoom:.7};
 const img=new Image();img.src='template.svg';img.addEventListener('error',()=>showMessage('Graph-paper template failed to load.',true));
@@ -114,7 +115,7 @@ function render(){
     const d=parseRows(),o=chooseOrigin(d,xs,ys);if(!o)throw Error('The selected scale does not fit the graph sheet. Use Auto-fit or reduce the scale.');
     if(o.x<0||o.x>COLS||o.y<0||o.y>ROWS)throw Error('Origin must lie on the graph-paper field.');
     const map=mapper(o,xs,ys),bounds={minX:-o.x*xs,maxX:(COLS-o.x)*xs,minY:-o.y*ys,maxY:(ROWS-o.y)*ys};
-    ctx.clearRect(0,0,W,H);ctx.drawImage(img,0,0,W,H);
+    ctx.clearRect(0,0,W,H);ctx.drawImage(paperImage||img,0,0,W,H);
     const L=map({x:bounds.minX,y:0}),R=map({x:bounds.maxX,y:0}),B=map({x:0,y:bounds.minY}),T=map({x:0,y:bounds.maxY});
     ctx.save();ctx.strokeStyle='rgba(7,39,55,.9)';ctx.fillStyle='rgba(7,39,55,.92)';ctx.lineWidth=2.6;
     ctx.beginPath();ctx.moveTo(L.x,L.y);ctx.lineTo(R.x,R.y);ctx.stroke();ctx.beginPath();ctx.moveTo(B.x,B.y);ctx.lineTo(T.x,T.y);ctx.stroke();drawArrow(L.x,L.y,R.x,R.y);drawArrow(B.x,B.y,T.x,T.y);ctx.restore();
@@ -146,6 +147,14 @@ $('originX').addEventListener('input',render);$('originY').addEventListener('inp
 $('addRow').addEventListener('click',()=>{const tr=document.createElement('tr');tr.innerHTML='<td></td><td><input></td><td><input></td><td><button class="del">×</button></td>';tr.querySelectorAll('input').forEach(i=>i.addEventListener('input',render));tr.querySelector('.del').onclick=()=>{tr.remove();rowsReindex();render()};$('rows').appendChild(tr);rowsReindex();tr.querySelector('input').focus();});
 $('clearRows').addEventListener('click',()=>{if(!confirm('Clear all readings?'))return;$('rows').innerHTML='';render();});
 $('resetBtn').addEventListener('click',()=>location.reload());
+$('choose').addEventListener('click',()=>$('imageInput').click());
+$('imageInput').addEventListener('change',e=>{
+  const file=e.target.files&&e.target.files[0]; if(!file)return;
+  const url=URL.createObjectURL(file),im=new Image();
+  im.onload=()=>{paperImage=im;cal.tl={x:40,y:38};cal.tr={x:1007,y:38};cal.br={x:1007,y:1496};cal.bl={x:40,y:1496};$('calBadge').textContent='Custom';syncCal();placeHandles();render();showMessage('Custom paper loaded');URL.revokeObjectURL(url);};
+  im.onerror=()=>showMessage('Could not load the selected image.',true);
+  im.src=url;
+});
 $('export').addEventListener('click',()=>{render();const a=document.createElement('a');a.download='graph-paper-plot.png';a.href=canvas.toDataURL('image/png');a.click();});
 $('print').addEventListener('click',()=>{render();window.print();});
 $('pasteBtn').addEventListener('click',()=>{$('modal').classList.remove('hide');$('pasteText').focus()});$('close').addEventListener('click',()=>$('modal').classList.add('hide'));$('import').addEventListener('click',()=>{try{const out=[];for(const line of $('pasteText').value.trim().split(/\n+/).filter(Boolean)){const q=line.split(/[\s,;\t]+/).filter(Boolean);if(q.length<2)continue;const x=Number(q[0]),y=Number(q[1]);if(!Number.isFinite(x)||!Number.isFinite(y))throw Error('Invalid number in pasted data.');out.push([x,y]);}if(!out.length)throw Error('No valid X,Y pairs found.');$('rows').innerHTML='';for(const p of out){const tr=document.createElement('tr');tr.innerHTML='<td></td><td><input value="'+p[0]+'"></td><td><input value="'+p[1]+'"></td><td><button class="del">×</button></td>';$('rows').appendChild(tr);}rowsReindex();document.querySelectorAll('#rows input').forEach(i=>i.addEventListener('input',render));document.querySelectorAll('#rows .del').forEach(d=>d.onclick=()=>{d.closest('tr').remove();rowsReindex();render()});$('modal').classList.add('hide');$('pasteText').value='';render();}catch(e){showMessage(e.message,true);}});
