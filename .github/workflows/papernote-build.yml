@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -44,9 +44,17 @@ jobs:
           echo "HSC TEST SERIES APK size: $APK_SIZE bytes"
           test "$APK_SIZE" -gt 100000
 
-      - name: Upload APK
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: HSC-TEST-SERIES-2027-${{ github.run_number }}
           path: hsc_test_series_2027/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
+
+      - name: Publish direct APK release
+        working-directory: hsc_test_series_2027
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="hsc-test-series-2027-${{ github.run_number }}"
+          gh release create "$TAG"             "app/build/outputs/apk/release/app-release.apk#HSC_TEST_SERIES_2027.apk"             --target "${{ github.sha }}"             --title "HSC TEST SERIES 2027 • Build ${{ github.run_number }}"             --notes "Installable Android APK for device testing. Demo CBT test engine with 7 HSC subjects."
