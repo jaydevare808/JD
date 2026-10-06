@@ -3,16 +3,10 @@ name: Build HSC TEST SERIES 2027 APK
 on:
   pull_request:
     branches: [main]
-  push:
-    branches: [hsc-test-series-2027-apk]
   workflow_dispatch:
 
 permissions:
   contents: write
-
-concurrency:
-  group: hsc-test-series-2027-${{ github.ref }}
-  cancel-in-progress: true
 
 jobs:
   build:
@@ -41,7 +35,7 @@ jobs:
       - name: Build HSC app
         working-directory: papernote-native
         run: |
-          gradle --no-daemon :app:assembleRelease :app:lintRelease
+          gradle --no-daemon :app:assembleRelease :app:lintRelease --stacktrace
 
       - name: Verify release APK
         working-directory: papernote-native
@@ -67,4 +61,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="hsc-test-series-2027-${{ github.run_number }}"
-          gh release create "$TAG"             "app/build/outputs/apk/release/app-release.apk#HSC_TEST_SERIES_2027.apk"             --target "${{ github.sha }}"             --title "HSC TEST SERIES 2027 • Build ${{ github.run_number }}"             --notes "Installable Android APK for device testing. This is a debug/test release; it contains the current HSC TEST SERIES 2027 demo test engine."
+          gh release create "$TAG"             "app/build/outputs/apk/release/app-release.apk#HSC_TEST_SERIES_2027.apk"             --target "${{ github.sha }}"             --title "HSC TEST SERIES 2027 • Build ${{ github.run_number }}"             --notes "Installable Android APK for device testing. This is a test release of the HSC TEST SERIES 2027 app."
