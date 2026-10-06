@@ -1,0 +1,1 @@
+Trigger single-path HSC APK build after workflow cleanup.
