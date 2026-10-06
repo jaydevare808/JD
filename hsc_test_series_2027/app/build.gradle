@@ -1,6 +1,4 @@
-plugins {
-    id 'com.android.application'
-}
+plugins { id 'com.android.application' }
 
 android {
     namespace 'com.jd.hsc_test_series_2027'
@@ -19,16 +17,8 @@ android {
         targetCompatibility JavaVersion.VERSION_17
     }
 
-    sourceSets {
-        main {
-            java.srcDirs = ['src/main/java_hsc']
-            res.srcDirs = ['src/main/res_hsc']
-            assets.srcDirs = []
-            resources.srcDirs = []
-        }
-    }
-
     buildTypes {
+        debug { debuggable true }
         release {
             signingConfig signingConfigs.debug
             minifyEnabled false

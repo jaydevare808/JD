@@ -1,0 +1,1 @@
+Trigger build and direct APK release publication.

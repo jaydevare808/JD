@@ -1,0 +1,7 @@
+{
+  "name": "hsc-test-series-2027-apk-builder",
+  "private": true,
+  "scripts": {
+    "build": "bash build.sh"
+  }
+}
