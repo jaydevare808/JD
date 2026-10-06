@@ -2,7 +2,7 @@ name: Build HSC Test Series 2027 APK
 
 on:
   push:
-    branches: [hsc-test-series-2027]
+    branches: [main, hsc-test-series-2027]
   pull_request:
     branches: [main]
   workflow_dispatch:
