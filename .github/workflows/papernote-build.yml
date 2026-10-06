@@ -1,17 +1,17 @@
-name: Build PaperNote stable candidate
+name: Build HSC TEST SERIES 2027 APK
 
 on:
   pull_request:
     branches: [main]
   push:
-    branches: [main, papernote-native]
+    branches: [hsc-test-series-2027-apk]
   workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: papernote-build-${{ github.ref }}
+  group: hsc-test-series-2027-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -38,52 +38,33 @@ jobs:
         with:
           gradle-version: '9.6.0'
 
-      - name: Cache PaperNote AI model
-        uses: actions/cache@v4
-        with:
-          path: papernote-native/app/src/main/assets/PaperNote-AI.gguf
-          key: papernote-ai-smollm2-135m-q4km-v1
-
-      - name: Build signed release and lint
+      - name: Build HSC app
         working-directory: papernote-native
         run: |
-          gradle --no-daemon :app:assembleRelease :app:bundleRelease :app:lintRelease
+          gradle --no-daemon :app:assembleRelease :app:lintRelease
 
       - name: Verify release APK
         working-directory: papernote-native
         run: |
           test -f app/build/outputs/apk/release/app-release.apk
           APK_SIZE=$(stat -c%s app/build/outputs/apk/release/app-release.apk)
-          echo "PaperNote APK size: ${APK_SIZE} bytes ($((APK_SIZE / 1024 / 1024)) MiB)"
-          test "$APK_SIZE" -gt 62914560
+          echo "HSC TEST SERIES APK size: $APK_SIZE bytes"
+          test "$APK_SIZE" -gt 100000
           mkdir -p artifacts
-          cp app/build/outputs/apk/release/app-release.apk artifacts/PaperNote-stable.apk
-          cp app/build/outputs/apk/release/app-release.apk artifacts/PaperNote-release.apk
-          cp app/build/outputs/bundle/release/app-release.aab artifacts/PaperNote-release.aab
+          cp app/build/outputs/apk/release/app-release.apk artifacts/HSC_TEST_SERIES_2027.apk
 
-      - name: Upload build artifact
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: PaperNote-stable-${{ github.run_number }}
-          path: |
-            papernote-native/artifacts/PaperNote-stable.apk
-            papernote-native/artifacts/PaperNote-release.apk
-            papernote-native/artifacts/PaperNote-release.aab
-            papernote-native/app/build/reports/lint-results-release.html
+          name: HSC-TEST-SERIES-2027-${{ github.run_number }}
+          path: papernote-native/artifacts/HSC_TEST_SERIES_2027.apk
           if-no-files-found: error
 
-      - name: Publish GitHub release
-        if: github.ref == 'refs/heads/main'
+      - name: Publish direct APK release
+        if: success()
         working-directory: papernote-native
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          VERSION_NAME=$(sed -n "s/.*versionName '\([^']*\)'.*/\1/p" app/build.gradle)
-          TAG="v${VERSION_NAME}"
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" "app/build/outputs/apk/release/app-release.apk#PaperNote.apk" --clobber
-          else
-            gh release create "$TAG" "app/build/outputs/apk/release/app-release.apk#PaperNote.apk" \
-              --title "PaperNote ${VERSION_NAME}" \
-              --notes "PaperNote stable Android candidate for device testing. Production signing is configured separately for Google Play."
-          fi
+          TAG="hsc-test-series-2027-${{ github.run_number }}"
+          gh release create "$TAG"             "app/build/outputs/apk/release/app-release.apk#HSC_TEST_SERIES_2027.apk"             --target "${{ github.sha }}"             --title "HSC TEST SERIES 2027 • Build ${{ github.run_number }}"             --notes "Installable Android APK for device testing. This is a debug/test release; it contains the current HSC TEST SERIES 2027 demo test engine."
