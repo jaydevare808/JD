@@ -33,11 +33,26 @@ jobs:
           gradle-version: '9.6.0'
 
       - name: Build HSC app
+        id: build
         working-directory: papernote-native
+        continue-on-error: true
         run: |
-          gradle --no-daemon :app:assembleRelease :app:lintRelease --stacktrace
+          set +e
+          gradle --no-daemon :app:assembleRelease --stacktrace > hsc-build.log 2>&1
+          status=$?
+          cat hsc-build.log
+          exit $status
+
+      - name: Upload Gradle diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: HSC-TEST-SERIES-2027-diagnostics-${{ github.run_number }}
+          path: papernote-native/hsc-build.log
+          if-no-files-found: error
 
       - name: Verify release APK
+        if: steps.build.outcome == 'success'
         working-directory: papernote-native
         run: |
           test -f app/build/outputs/apk/release/app-release.apk
@@ -48,6 +63,7 @@ jobs:
           cp app/build/outputs/apk/release/app-release.apk artifacts/HSC_TEST_SERIES_2027.apk
 
       - name: Upload APK artifact
+        if: steps.build.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: HSC-TEST-SERIES-2027-${{ github.run_number }}
@@ -55,10 +71,14 @@ jobs:
           if-no-files-found: error
 
       - name: Publish direct APK release
-        if: success()
+        if: steps.build.outcome == 'success'
         working-directory: papernote-native
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="hsc-test-series-2027-${{ github.run_number }}"
           gh release create "$TAG"             "app/build/outputs/apk/release/app-release.apk#HSC_TEST_SERIES_2027.apk"             --target "${{ github.sha }}"             --title "HSC TEST SERIES 2027 • Build ${{ github.run_number }}"             --notes "Installable Android APK for device testing. This is a test release of the HSC TEST SERIES 2027 app."
+
+      - name: Fail if build failed
+        if: steps.build.outcome != 'success'
+        run: exit 1
