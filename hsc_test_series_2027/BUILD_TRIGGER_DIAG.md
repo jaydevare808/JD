@@ -1,0 +1,1 @@
+Trigger diagnostic HSC APK build.
