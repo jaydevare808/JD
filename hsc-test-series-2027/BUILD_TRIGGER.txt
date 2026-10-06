@@ -1,0 +1,1 @@
+Build trigger for the HSC Test Series 2027 APK verification workflow.
