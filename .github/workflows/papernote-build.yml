@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
   build:
@@ -50,6 +51,19 @@ jobs:
           name: HSC-TEST-SERIES-2027-diagnostics-${{ github.run_number }}
           path: papernote-native/hsc-build.log
           if-no-files-found: error
+
+      - name: Report Gradle failure in PR
+        if: steps.build.outcome != 'success'
+        working-directory: papernote-native
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "HSC TEST SERIES 2027 — Gradle build failure"
+            echo
+            tail -n 140 hsc-build.log
+          } > /tmp/hsc-build-error.md
+          gh pr comment ${{ github.event.pull_request.number }} --repo "${{ github.repository }}" --body-file /tmp/hsc-build-error.md
 
       - name: Verify release APK
         if: steps.build.outcome == 'success'
