@@ -214,7 +214,7 @@ public class MainActivity extends android.app.Activity {
     private int dp(int v){return Math.round(v*getResources().getDisplayMetrics().density);}
     private void updateTimer(long ms){if(timerText==null)return;long s=ms/1000,m=s/60,r=s%60;timerText.setText(String.format(Locale.US,"%02d:%02d",m,r));timerText.setTextColor(s<=60?DANGER:(s<=180?WARNING:TEXT));}
     private void stopTimer(){if(timer!=null){timer.cancel();timer=null;}}
-    private void saveHistory(String subject,String test,int score,int total){String old=prefs.getString("history","");String date=new SimpleDateFormat("dd MMM yyyy, HH:mm",Locale.US).format(new Date());String all=subject+"|"+test+"|"+score+"|"+total+"|"+date+(old.isEmpty()?"":"\n"+old);String[] lines=all.split("\\n");StringBuilder b=new StringBuilder();for(int i=0;i<Math.min(12,lines.length);i++){if(i>0)b.append('\\n');b.append(lines[i]);}prefs.edit().putString("history",b.toString()).apply();}
+    private void saveHistory(String subject,String test,int score,int total){String old=prefs.getString("history","");String date=new SimpleDateFormat("dd MMM yyyy, HH:mm",Locale.US).format(new Date());String all=subject+"|"+test+"|"+score+"|"+total+"|"+date+(old.isEmpty()?"":"\n"+old);String[] lines=all.split("\\n");StringBuilder b=new StringBuilder();for(int i=0;i<Math.min(12,lines.length);i++){if(i>0)b.append('\n');b.append(lines[i]);}prefs.edit().putString("history",b.toString()).apply();}
 
     private static Question q(String t,String... r){String[] o=new String[4];System.arraycopy(r,1,o,0,4);return new Question(t,o,Integer.parseInt(r[0]),"");}
     private static Question qn(String t,String n,int c,String a,String b,String d,String e){return new Question(t,new String[]{a,b,d,e},c,n);}
