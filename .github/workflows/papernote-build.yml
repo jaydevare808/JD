@@ -87,3 +87,41 @@ jobs:
               --title "PaperNote ${VERSION_NAME}" \
               --notes "PaperNote stable Android candidate for device testing. Production signing is configured separately for Google Play."
           fi
+
+
+  hsc_test_series:
+    name: Build HSC Test Series 2027
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Setup Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platforms;android-35 build-tools;35.0.0'
+      - name: Setup Gradle 8.9
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.9'
+      - name: Build debug APK
+        working-directory: hsc-test-series-2027
+        run: gradle --no-daemon :app:assembleDebug
+      - name: Verify APK
+        working-directory: hsc-test-series-2027
+        run: |
+          test -s app/build/outputs/apk/debug/app-debug.apk
+          mkdir -p artifacts
+          cp app/build/outputs/apk/debug/app-debug.apk artifacts/HSC-Test-Series-2027-debug.apk
+          stat -c 'HSC APK: %s bytes' artifacts/HSC-Test-Series-2027-debug.apk
+      - name: Upload HSC APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: HSC-Test-Series-2027-${{ github.run_number }}
+          path: hsc-test-series-2027/artifacts/HSC-Test-Series-2027-debug.apk
+          if-no-files-found: error
+          retention-days: 14
