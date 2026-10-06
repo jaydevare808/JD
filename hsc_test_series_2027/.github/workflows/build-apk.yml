@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - hsc-test-series-2027-apk
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
@@ -28,7 +31,7 @@ jobs:
           sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: '9.6.0'
 
