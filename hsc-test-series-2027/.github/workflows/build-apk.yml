@@ -3,6 +3,8 @@ name: Build HSC Test Series 2027 APK
 on:
   push:
     branches: [hsc-test-series-2027]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 jobs:
@@ -47,12 +49,5 @@ jobs:
         with:
           name: hsc-test-series-2027-debug-apk
           path: hsc-test-series-2027/app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
-
-      - name: Upload source
-        uses: actions/upload-artifact@v4
-        with:
-          name: hsc-test-series-2027-source
-          path: hsc-test-series-2027/
           if-no-files-found: error
           retention-days: 7
